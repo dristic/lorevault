@@ -1,0 +1,23 @@
+[package]
+name = "lv-gateway"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+lv-core = { path = "../lv-core" }
+lv-auth = { path = "../lv-auth" }
+lv-storage = { path = "../lv-storage" }
+tokio = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+time = { workspace = true }
+tracing = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+
+[build-dependencies]
+tonic-build = { workspace = true }

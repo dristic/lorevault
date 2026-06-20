@@ -1,0 +1,22 @@
+[package]
+name = "lv-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+lv-core = { path = "../lv-core" }
+tokio = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+time = { workspace = true }
+sqlx = { workspace = true }
+deadpool-redis = { workspace = true }
+redis = { workspace = true }
+aws-sdk-s3 = { workspace = true }
+aws-config = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }

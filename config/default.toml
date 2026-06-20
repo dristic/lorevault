@@ -1,0 +1,19 @@
+[server]
+bind      = "0.0.0.0:3000"
+grpc_bind = "0.0.0.0:50051"
+
+[database]
+url             = "postgres://lorevault:lorevault@localhost/lorevault"
+max_connections = 10
+
+[redis]
+url = "redis://localhost:6379"
+
+[auth]
+jwt_secret  = "change-me-in-production"
+jwt_ttl_secs = 86400  # 24 hours
+
+[storage]
+s3_endpoint = "http://localhost:9000"  # MinIO for local dev
+s3_bucket   = "lorevault"
+s3_region   = "us-east-1"

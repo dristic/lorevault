@@ -1,0 +1,19 @@
+[package]
+name = "lv-auth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+lv-core = { path = "../lv-core" }
+tokio = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+time = { workspace = true }
+argon2 = { workspace = true }
+jsonwebtoken = { workspace = true }
+rand = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+tracing = { workspace = true }

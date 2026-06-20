@@ -1,0 +1,13 @@
+[package]
+name = "lv-worker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+lv-core = { path = "../lv-core" }
+lv-storage = { path = "../lv-storage" }
+tokio = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
