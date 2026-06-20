@@ -2097,6 +2097,8 @@ name = "lv-api"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aws-config",
+ "aws-sdk-s3",
  "axum",
  "config",
  "deadpool-redis",
@@ -2154,16 +2156,24 @@ dependencies = [
 name = "lv-gateway"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bytes",
  "futures",
+ "hex",
+ "jsonwebtoken",
  "lv-auth",
  "lv-core",
  "lv-storage",
  "prost",
+ "prost-types",
  "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
  "thiserror",
  "time",
  "tokio",
+ "tokio-stream",
  "tonic",
  "tonic-build",
  "tracing",

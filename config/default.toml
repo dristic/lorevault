@@ -1,6 +1,7 @@
 [server]
-bind      = "0.0.0.0:3000"
-grpc_bind = "0.0.0.0:50051"
+bind       = "0.0.0.0:3000"
+grpc_bind  = "0.0.0.0:41337"
+public_url = "grpc://localhost:41337"
 
 [database]
 url             = "postgres://lorevault:lorevault@localhost/lorevault"

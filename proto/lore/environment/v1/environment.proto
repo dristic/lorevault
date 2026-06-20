@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package lore.environment.v1;
+
+service EnvironmentService {
+  rpc EnvironmentGet(EnvironmentGetRequest) returns (EnvironmentGetResponse);
+}
+
+message Endpoint {
+  string auth_url = 1;
+  string repository_url = 2;
+  string storage_url = 3;
+  string revision_url = 4;
+  string lock_url = 5;
+  string notification_url = 6;
+}
+
+enum CompressionMode {
+  NOT_SPECIFIED = 0;
+  NO_COMPRESSION = 1;
+  LZ4 = 2;
+  OODLE = 3;
+  ZSTD = 4;
+}
+
+message Config {
+  uint32 max_query_batch = 1;
+  optional CompressionMode compression_mode = 2;
+}
+
+message Environment {
+  Endpoint endpoint = 1;
+  Config config = 2;
+}
+
+message EnvironmentGetRequest {}
+
+message EnvironmentGetResponse {
+  Environment environment = 1;
+}

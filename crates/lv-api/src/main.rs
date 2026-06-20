@@ -3,7 +3,11 @@ use std::{net::SocketAddr, sync::Arc};
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
+use aws_config::BehaviorVersion;
+use aws_sdk_s3::config::Builder as S3Builder;
 use lv_auth::providers::password::PasswordProvider;
+use lv_gateway::state::GatewayState;
+use lv_storage::blob::BlobStore;
 
 mod config;
 mod error;
@@ -27,16 +31,34 @@ async fn main() -> anyhow::Result<()> {
 
     let auth = Arc::new(PasswordProvider::new(db.clone()));
 
-    let state = state::AppState::new(cfg.clone(), db, cache, auth);
+    let app_state = state::AppState::new(cfg.clone(), db.clone(), cache, auth);
+    let app = routes::router(app_state);
 
-    let app = routes::router(state);
+    // Build S3/MinIO blob store
+    let mut s3_cfg_builder = aws_config::defaults(BehaviorVersion::latest());
+    if let Some(endpoint) = &cfg.storage.s3_endpoint {
+        s3_cfg_builder = s3_cfg_builder.endpoint_url(endpoint);
+    }
+    let aws_cfg = s3_cfg_builder.region(
+        aws_config::Region::new(cfg.storage.s3_region.clone())
+    ).load().await;
+    let s3_client = aws_sdk_s3::Client::new(&aws_cfg);
+    let blob = Arc::new(BlobStore::new(s3_client, cfg.storage.s3_bucket.clone()));
+
+    let gateway_state = GatewayState::new(
+        db,
+        blob,
+        cfg.auth.jwt_secret.clone(),
+        cfg.auth.jwt_ttl_secs,
+        cfg.server.public_url.clone(),
+    );
 
     let addr: SocketAddr = cfg.server.bind.parse()?;
     info!(%addr, "REST API listening");
 
     let grpc_addr: SocketAddr = cfg.server.grpc_bind.parse()?;
     tokio::spawn(async move {
-        if let Err(e) = lv_gateway::server::serve(grpc_addr).await {
+        if let Err(e) = lv_gateway::server::serve(grpc_addr, gateway_state).await {
             tracing::error!("gRPC gateway error: {e}");
         }
     });

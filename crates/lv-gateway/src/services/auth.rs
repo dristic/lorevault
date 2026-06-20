@@ -1,0 +1,182 @@
+use sqlx::Row;
+use tonic::{Request, Response, Status};
+use uuid::Uuid;
+
+use crate::jwt::{self, GatewayClaims};
+use crate::proto::auth_api::{
+    urc_auth_api_server::UrcAuthApi, CheckUserPermissionRequest, CheckUserPermissionResponse,
+    ExchangeApiKeyForUserTokenRequest, ExchangeApiKeyForUserTokenResponse,
+    ExchangeExternalTokenForUserTokenRequest, ExchangeExternalTokenForUserTokenResponse,
+    ExchangeUserTokenForMultiresourceTokenRequest,
+    ExchangeUserTokenForMultiresourceTokenResponse, GetAuthSessionRequest,
+    GetAuthSessionResponse, GetProviderUserIdRequest, GetProviderUserIdResponse,
+    GetUserIdRequest, GetUserIdResponse, GetUserInfoRequest, GetUserInfoResponse,
+    HealthCheckRequest, HealthCheckResponse, LookupUserPermissionsRequest,
+    LookupUserPermissionsResponse, RefreshAuthSessionRequest, RefreshAuthSessionResponse,
+    StartAuthSessionRequest, StartAuthSessionResponse, UserToken, VerifyUserRequest,
+    VerifyUserResponse,
+};
+use crate::state::GatewayState;
+
+pub struct AuthApiImpl {
+    pub state: GatewayState,
+}
+
+fn make_user_token(claims: &GatewayClaims, token_str: String, username: &str) -> UserToken {
+    UserToken {
+        user_token: token_str,
+        expires_at: claims.exp,
+        user_id: claims.sub.to_string(),
+        user_name: username.to_owned(),
+    }
+}
+
+#[tonic::async_trait]
+impl UrcAuthApi for AuthApiImpl {
+    async fn health_check(
+        &self,
+        _request: Request<HealthCheckRequest>,
+    ) -> Result<Response<HealthCheckResponse>, Status> {
+        Ok(Response::new(HealthCheckResponse {
+            status: "ok".into(),
+        }))
+    }
+
+    async fn exchange_api_key_for_user_token(
+        &self,
+        request: Request<ExchangeApiKeyForUserTokenRequest>,
+    ) -> Result<Response<ExchangeApiKeyForUserTokenResponse>, Status> {
+        let api_key = request.into_inner().api_key;
+        let hash = lv_auth::token::hash_api_token(&api_key);
+
+        let row = sqlx::query(
+            r#"SELECT t.user_id, u.username
+               FROM api_tokens t
+               JOIN users u ON u.id = t.user_id
+               WHERE t.token_hash = $1"#,
+        )
+        .bind(&hash)
+        .fetch_optional(&self.state.db)
+        .await
+        .map_err(|e| Status::internal(e.to_string()))?
+        .ok_or_else(|| Status::unauthenticated("invalid api key"))?;
+
+        let user_id: Uuid = row
+            .try_get("user_id")
+            .map_err(|e| Status::internal(e.to_string()))?;
+        let username: String = row
+            .try_get("username")
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        let claims = jwt::new_claims(user_id, vec![], self.state.jwt_ttl_secs);
+        let token_str = jwt::encode_claims(&claims, &self.state.jwt_secret)
+            .map_err(Status::internal)?;
+
+        Ok(Response::new(ExchangeApiKeyForUserTokenResponse {
+            user_token: Some(make_user_token(&claims, token_str, &username)),
+        }))
+    }
+
+    async fn exchange_user_token_for_multiresource_token(
+        &self,
+        request: Request<ExchangeUserTokenForMultiresourceTokenRequest>,
+    ) -> Result<Response<ExchangeUserTokenForMultiresourceTokenResponse>, Status> {
+        let base_claims = jwt::extract_claims(request.metadata(), &self.state.jwt_secret)?;
+        let resource_ids = request.into_inner().resource_id;
+
+        let repos: Vec<Uuid> = resource_ids
+            .iter()
+            .filter_map(|s| Uuid::parse_str(s).ok())
+            .collect();
+
+        let scoped = jwt::new_claims(base_claims.sub, repos, self.state.jwt_ttl_secs);
+        let token_str = jwt::encode_claims(&scoped, &self.state.jwt_secret)
+            .map_err(Status::internal)?;
+
+        let username: String = sqlx::query("SELECT username FROM users WHERE id = $1")
+            .bind(base_claims.sub)
+            .fetch_optional(&self.state.db)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?
+            .and_then(|r| r.try_get::<String, _>("username").ok())
+            .unwrap_or_default();
+
+        Ok(Response::new(
+            ExchangeUserTokenForMultiresourceTokenResponse {
+                token: Some(make_user_token(&scoped, token_str, &username)),
+            },
+        ))
+    }
+
+    // ── Stub implementations ──────────────────────────────────────────────────
+
+    async fn start_auth_session(
+        &self,
+        _: Request<StartAuthSessionRequest>,
+    ) -> Result<Response<StartAuthSessionResponse>, Status> {
+        Err(Status::unimplemented("not supported"))
+    }
+
+    async fn get_auth_session(
+        &self,
+        _: Request<GetAuthSessionRequest>,
+    ) -> Result<Response<GetAuthSessionResponse>, Status> {
+        Err(Status::unimplemented("not supported"))
+    }
+
+    async fn refresh_auth_session(
+        &self,
+        _: Request<RefreshAuthSessionRequest>,
+    ) -> Result<Response<RefreshAuthSessionResponse>, Status> {
+        Err(Status::unimplemented("not supported"))
+    }
+
+    async fn verify_user(
+        &self,
+        _: Request<VerifyUserRequest>,
+    ) -> Result<Response<VerifyUserResponse>, Status> {
+        Err(Status::unimplemented("not supported"))
+    }
+
+    async fn exchange_external_token_for_user_token(
+        &self,
+        _: Request<ExchangeExternalTokenForUserTokenRequest>,
+    ) -> Result<Response<ExchangeExternalTokenForUserTokenResponse>, Status> {
+        Err(Status::unimplemented("not supported"))
+    }
+
+    async fn check_user_permission(
+        &self,
+        _: Request<CheckUserPermissionRequest>,
+    ) -> Result<Response<CheckUserPermissionResponse>, Status> {
+        Err(Status::unimplemented("not supported"))
+    }
+
+    async fn lookup_user_permissions(
+        &self,
+        _: Request<LookupUserPermissionsRequest>,
+    ) -> Result<Response<LookupUserPermissionsResponse>, Status> {
+        Err(Status::unimplemented("not supported"))
+    }
+
+    async fn get_user_info(
+        &self,
+        _: Request<GetUserInfoRequest>,
+    ) -> Result<Response<GetUserInfoResponse>, Status> {
+        Err(Status::unimplemented("not supported"))
+    }
+
+    async fn get_user_id(
+        &self,
+        _: Request<GetUserIdRequest>,
+    ) -> Result<Response<GetUserIdResponse>, Status> {
+        Err(Status::unimplemented("not supported"))
+    }
+
+    async fn get_provider_user_id(
+        &self,
+        _: Request<GetProviderUserIdRequest>,
+    ) -> Result<Response<GetProviderUserIdResponse>, Status> {
+        Err(Status::unimplemented("not supported"))
+    }
+}

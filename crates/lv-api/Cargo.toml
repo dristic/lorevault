@@ -13,7 +13,9 @@ lv-core = { path = "../lv-core" }
 lv-auth = { path = "../lv-auth" }
 lv-storage = { path = "../lv-storage" }
 lv-gateway = { path = "../lv-gateway" }
-tokio = { workspace = true }
+tokio        = { workspace = true }
+aws-sdk-s3   = { workspace = true }
+aws-config   = { workspace = true }
 axum = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }

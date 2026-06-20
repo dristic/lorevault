@@ -5,19 +5,27 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-lv-core = { path = "../lv-core" }
-lv-auth = { path = "../lv-auth" }
+lv-core    = { path = "../lv-core" }
+lv-auth    = { path = "../lv-auth" }
 lv-storage = { path = "../lv-storage" }
-tokio = { workspace = true }
-tonic = { workspace = true }
-prost = { workspace = true }
-serde = { workspace = true }
-thiserror = { workspace = true }
-uuid = { workspace = true }
-time = { workspace = true }
-tracing = { workspace = true }
-bytes = { workspace = true }
-futures = { workspace = true }
+tokio         = { workspace = true }
+tokio-stream  = { workspace = true }
+tonic         = { workspace = true }
+prost         = { workspace = true }
+prost-types   = { workspace = true }
+serde         = { workspace = true }
+serde_json    = { workspace = true }
+thiserror     = { workspace = true }
+anyhow        = { workspace = true }
+uuid          = { workspace = true }
+time          = { workspace = true }
+tracing       = { workspace = true }
+bytes         = { workspace = true }
+futures       = { workspace = true }
+sqlx          = { workspace = true }
+hex           = { workspace = true }
+sha2          = { workspace = true }
+jsonwebtoken  = { workspace = true }
 
 [build-dependencies]
 tonic-build = { workspace = true }

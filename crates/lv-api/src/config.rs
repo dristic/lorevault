@@ -14,6 +14,8 @@ pub struct Settings {
 pub struct ServerConfig {
     pub bind: String,
     pub grpc_bind: String,
+    /// Public URL announced to Lore CLI clients via EnvironmentGet.
+    pub public_url: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
