@@ -2,6 +2,8 @@ use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde_json::json;
 use thiserror::Error;
 
+use lv_auth::error::AuthError;
+
 #[derive(Debug, Error)]
 pub enum ApiError {
     #[error("not found")]
@@ -21,6 +23,23 @@ pub enum ApiError {
 
     #[error("internal server error")]
     Internal(#[from] anyhow::Error),
+}
+
+impl From<AuthError> for ApiError {
+    fn from(e: AuthError) -> Self {
+        match e {
+            AuthError::InvalidCredentials
+            | AuthError::TokenExpired
+            | AuthError::TokenInvalid => ApiError::Unauthorized,
+            AuthError::InsufficientScope => ApiError::Forbidden,
+            AuthError::Validation(msg) => ApiError::BadRequest(msg),
+            AuthError::Conflict(msg) => ApiError::Conflict(msg),
+            AuthError::NotSupported => {
+                ApiError::BadRequest("operation not supported by this auth provider".into())
+            }
+            AuthError::Internal(msg) => ApiError::Internal(anyhow::anyhow!(msg)),
+        }
+    }
 }
 
 impl IntoResponse for ApiError {

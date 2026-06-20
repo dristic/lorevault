@@ -14,6 +14,15 @@ pub enum AuthError {
     #[error("insufficient scope")]
     InsufficientScope,
 
+    #[error("validation error: {0}")]
+    Validation(String),
+
+    #[error("conflict: {0}")]
+    Conflict(String),
+
+    #[error("operation not supported by this provider")]
+    NotSupported,
+
     #[error("internal error: {0}")]
     Internal(String),
 }
