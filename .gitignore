@@ -3,3 +3,10 @@
 *.env
 .env*
 **/*.rs.bk
+
+# OpenTofu / Terraform
+infra/.terraform/
+infra/.terraform.lock.hcl
+infra/terraform.tfvars
+infra/*.tfstate
+infra/*.tfstate.backup

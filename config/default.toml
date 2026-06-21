@@ -15,6 +15,6 @@ jwt_secret  = "change-me-in-production"
 jwt_ttl_secs = 86400  # 24 hours
 
 [storage]
-s3_endpoint = "http://localhost:9000"  # MinIO for local dev
+# s3_endpoint is only set for local dev (MinIO). Leave unset in production to use native AWS S3.
 s3_bucket   = "lorevault"
 s3_region   = "us-east-1"

@@ -1,0 +1,33 @@
+aws_region  = "us-east-1"
+environment = "production"
+
+# Your domain — point its DNS CNAME to the alb_dns_name output after apply
+domain_name = "lorevault.example.com"
+
+# ARN of a pre-provisioned ACM certificate for domain_name.
+# Request one at: AWS Console → Certificate Manager → Request public certificate
+# The cert must be in the SAME region as your ALB.
+acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# Database
+db_instance_class    = "db.t4g.small"
+db_allocated_storage = 20
+db_password          = "CHANGE_ME_strong_password_here"
+
+# Cache
+redis_node_type = "cache.t4g.micro"
+
+# Auth
+jwt_secret = "CHANGE_ME_at_least_32_random_chars"
+
+# Container image
+image_tag = "latest"
+
+# ECS sizing (increase for production load)
+app_cpu           = 512   # 0.5 vCPU
+app_memory        = 1024  # 1 GiB
+app_desired_count = 1
+
+# Networking
+vpc_cidr           = "10.0.0.0/16"
+availability_zones = ["us-east-1a", "us-east-1b"]
