@@ -3,8 +3,7 @@ use std::{net::SocketAddr, sync::Arc};
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use aws_config::BehaviorVersion;
-use aws_sdk_s3::config::Builder as S3Builder;
+use object_store::{aws::AmazonS3Builder, local::LocalFileSystem, ObjectStore};
 use lv_auth::providers::password::PasswordProvider;
 use lv_gateway::state::GatewayState;
 use lv_storage::blob::BlobStore;
@@ -34,16 +33,26 @@ async fn main() -> anyhow::Result<()> {
     let app_state = state::AppState::new(cfg.clone(), db.clone(), cache, auth);
     let app = routes::router(app_state);
 
-    // Build S3/MinIO blob store
-    let mut s3_cfg_builder = aws_config::defaults(BehaviorVersion::latest());
-    if let Some(endpoint) = &cfg.storage.s3_endpoint {
-        s3_cfg_builder = s3_cfg_builder.endpoint_url(endpoint);
-    }
-    let aws_cfg = s3_cfg_builder.region(
-        aws_config::Region::new(cfg.storage.s3_region.clone())
-    ).load().await;
-    let s3_client = aws_sdk_s3::Client::new(&aws_cfg);
-    let blob = Arc::new(BlobStore::new(s3_client, cfg.storage.s3_bucket.clone()));
+    // Build blob store
+    let object_store: Arc<dyn ObjectStore> = match cfg.storage.backend.as_str() {
+        "s3" => {
+            let bucket = cfg.storage.s3_bucket.as_deref().unwrap_or("lorevault");
+            let region = cfg.storage.s3_region.as_deref().unwrap_or("us-east-1");
+            let mut builder = AmazonS3Builder::new()
+                .with_bucket_name(bucket)
+                .with_region(region);
+            if let Some(endpoint) = &cfg.storage.s3_endpoint {
+                builder = builder.with_endpoint(endpoint).with_allow_http(true);
+            }
+            Arc::new(builder.build()?)
+        }
+        _ => {
+            let path = cfg.storage.local_path.as_deref().unwrap_or("/tmp/lorevault-blobs");
+            std::fs::create_dir_all(path)?;
+            Arc::new(LocalFileSystem::new_with_prefix(path)?)
+        }
+    };
+    let blob = Arc::new(BlobStore::new(object_store));
 
     let gateway_state = GatewayState::new(
         db,

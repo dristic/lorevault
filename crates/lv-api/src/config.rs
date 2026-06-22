@@ -37,9 +37,16 @@ pub struct AuthConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct StorageConfig {
+    /// "local" (default) or "s3"
+    pub backend: String,
+    /// Root directory for the local filesystem backend.
+    pub local_path: Option<String>,
+    /// S3 bucket name (required when backend = "s3").
+    pub s3_bucket: Option<String>,
+    /// AWS region (required when backend = "s3").
+    pub s3_region: Option<String>,
+    /// Override endpoint URL for S3-compatible services (optional).
     pub s3_endpoint: Option<String>,
-    pub s3_bucket: String,
-    pub s3_region: String,
 }
 
 impl Settings {
