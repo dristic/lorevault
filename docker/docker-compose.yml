@@ -29,24 +29,6 @@ services:
       timeout: 3s
       retries: 5
 
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: lorevault
-      MINIO_ROOT_PASSWORD: lorevault123
-    ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # Console UI
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
 volumes:
   postgres_data:
   redis_data:
-  minio_data:
