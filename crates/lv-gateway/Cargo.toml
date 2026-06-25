@@ -29,6 +29,9 @@ sqlx          = { workspace = true }
 hex           = { workspace = true }
 sha2          = { workspace = true }
 jsonwebtoken  = { workspace = true }
+deadpool-redis = { workspace = true }
+redis          = { workspace = true }
+rand           = { workspace = true }
 
 [build-dependencies]
 tonic-build = { workspace = true }

@@ -14,7 +14,9 @@ pub mod users;
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(health::healthz))
-        // Auth
+        // Browser-based login (Lore CLI device flow)
+        .route("/login", get(auth::browser_login_form).post(auth::browser_login_submit))
+        // Auth API
         .route("/api/v1/auth/register", post(auth::register))
         .route("/api/v1/auth/login", post(auth::login))
         .route("/api/v1/auth/tokens", post(auth::create_token))

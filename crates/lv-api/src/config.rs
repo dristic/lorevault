@@ -14,8 +14,10 @@ pub struct Settings {
 pub struct ServerConfig {
     pub bind: String,
     pub grpc_bind: String,
-    /// Public URL announced to Lore CLI clients via EnvironmentGet.
+    /// Public URL announced to Lore CLI clients via EnvironmentGet (gRPC endpoint).
     pub public_url: String,
+    /// Base HTTP URL for the web UI, used to build browser-login redirect URLs.
+    pub web_url: String,
     /// Path to the TLS certificate PEM file. When set (along with `tls_key`),
     /// the gRPC gateway serves over TLS.
     pub tls_cert: Option<String>,

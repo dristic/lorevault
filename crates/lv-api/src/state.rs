@@ -11,7 +11,6 @@ use crate::config::Settings;
 pub struct AppState {
     pub config: Settings,
     pub db: PgPool,
-    #[allow(dead_code)]
     pub cache: RedisPool,
     /// Active authentication provider. Swap for a different `AuthProvider`
     /// implementation to support OAuth, SAML, etc. without touching route logic.

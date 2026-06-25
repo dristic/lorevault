@@ -1,3 +1,4 @@
+use deadpool_redis::redis::AsyncCommands;
 use sqlx::Row;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
@@ -108,21 +109,71 @@ impl UrcAuthApi for AuthApiImpl {
         ))
     }
 
-    // ── Stub implementations ──────────────────────────────────────────────────
-
     async fn start_auth_session(
         &self,
         _: Request<StartAuthSessionRequest>,
     ) -> Result<Response<StartAuthSessionResponse>, Status> {
-        Err(Status::unimplemented("not supported"))
+        let code_bytes: [u8; 16] = rand::random();
+        let session_code = hex::encode(code_bytes);
+
+        let mut conn = self
+            .state
+            .cache
+            .get()
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        let key = format!("auth:session:{session_code}");
+        conn.set_ex::<_, _, ()>(&key, r#"{"state":"pending"}"#, 600u64)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        let login_url = format!("{}/login?session={session_code}", self.state.web_url);
+
+        Ok(Response::new(StartAuthSessionResponse {
+            session_code,
+            login_url,
+        }))
     }
 
     async fn get_auth_session(
         &self,
-        _: Request<GetAuthSessionRequest>,
+        request: Request<GetAuthSessionRequest>,
     ) -> Result<Response<GetAuthSessionResponse>, Status> {
-        Err(Status::unimplemented("not supported"))
+        let session_code = request.into_inner().session_code;
+
+        let mut conn = self
+            .state
+            .cache
+            .get()
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        let key = format!("auth:session:{session_code}");
+        let raw: Option<String> = conn
+            .get(&key)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        let raw = raw.ok_or_else(|| Status::not_found("session expired or not found"))?;
+
+        let session: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| Status::internal(e.to_string()))?;
+
+        let user_token = match session["state"].as_str() {
+            Some("complete") => Some(UserToken {
+                user_token: session["token"].as_str().unwrap_or_default().to_string(),
+                user_id: session["user_id"].as_str().unwrap_or_default().to_string(),
+                user_name: session["username"].as_str().unwrap_or_default().to_string(),
+                expires_at: session["expires_at"].as_i64().unwrap_or_default(),
+            }),
+            _ => None,
+        };
+
+        Ok(Response::new(GetAuthSessionResponse { user_token }))
     }
+
+    // ── Stub implementations ──────────────────────────────────────────────────
 
     async fn refresh_auth_session(
         &self,

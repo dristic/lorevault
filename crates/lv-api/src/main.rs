@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
 
     let auth = Arc::new(PasswordProvider::new(db.clone()));
 
-    let app_state = state::AppState::new(cfg.clone(), db.clone(), cache, auth);
+    let app_state = state::AppState::new(cfg.clone(), db.clone(), cache.clone(), auth);
     let app = routes::router(app_state);
 
     // Build blob store
@@ -57,9 +57,11 @@ async fn main() -> anyhow::Result<()> {
     let gateway_state = GatewayState::new(
         db,
         blob,
+        cache.clone(),
         cfg.auth.jwt_secret.clone(),
         cfg.auth.jwt_ttl_secs,
         cfg.server.public_url.clone(),
+        cfg.server.web_url.clone(),
     );
 
     let addr: SocketAddr = cfg.server.bind.parse()?;
