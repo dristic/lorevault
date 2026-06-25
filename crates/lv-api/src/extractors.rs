@@ -54,7 +54,7 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
     }
 }
 
-fn bearer_token<'a>(parts: &'a Parts) -> Option<&'a str> {
+fn bearer_token(parts: &Parts) -> Option<&str> {
     parts
         .headers
         .get("authorization")

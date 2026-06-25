@@ -69,6 +69,12 @@ bytes = "1"
 futures = "0.3"
 async-trait = "0.1"
 
+[workspace.lints.rust]
+warnings = "deny"
+
+[workspace.lints.clippy]
+all = "deny"
+
 [profile.dev]
 opt-level = 0
 
