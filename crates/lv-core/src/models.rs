@@ -31,6 +31,7 @@ pub enum OrgRole {
 // ── Repositories ──────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "owner_type", rename_all = "lowercase")]
 pub enum OwnerType {
     User,
@@ -38,6 +39,7 @@ pub enum OwnerType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "visibility", rename_all = "lowercase")]
 pub enum Visibility {
     Public,

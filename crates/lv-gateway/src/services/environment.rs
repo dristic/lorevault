@@ -17,10 +17,13 @@ impl EnvironmentService for EnvironmentServiceImpl {
         _request: Request<EnvironmentGetRequest>,
     ) -> Result<Response<EnvironmentGetResponse>, Status> {
         let url = self.state.server_url.clone();
+        let auth_url = url
+            .replacen("grpcs://", "ucs-auth://", 1)
+            .replacen("grpc://", "ucs-auth://", 1);
         Ok(Response::new(EnvironmentGetResponse {
             environment: Some(Environment {
                 endpoint: Some(Endpoint {
-                    auth_url: url.clone(),
+                    auth_url,
                     repository_url: url.clone(),
                     storage_url: url.clone(),
                     revision_url: url.clone(),

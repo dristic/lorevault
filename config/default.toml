@@ -1,7 +1,9 @@
 [server]
 bind       = "0.0.0.0:3000"
 grpc_bind  = "0.0.0.0:41337"
-public_url = "grpc://localhost:41337"
+public_url = "grpcs://localhost:41337"
+tls_cert   = "config/certs/localhost.pem"
+tls_key    = "config/certs/localhost-key.pem"
 
 [database]
 url             = "postgres://lorevault:lorevault@localhost/lorevault"

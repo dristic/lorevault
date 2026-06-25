@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use tonic::transport::Server;
+use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tracing::info;
 
 use crate::proto::{
@@ -21,10 +21,25 @@ use crate::services::{
 };
 use crate::state::GatewayState;
 
-pub async fn serve(addr: SocketAddr, state: GatewayState) -> Result<(), tonic::transport::Error> {
-    info!(%addr, "gRPC gateway listening");
+pub async fn serve(
+    addr: SocketAddr,
+    state: GatewayState,
+    tls_cert: Option<String>,
+    tls_key: Option<String>,
+) -> Result<(), tonic::transport::Error> {
+    let mut builder = Server::builder();
 
-    Server::builder()
+    if let (Some(cert), Some(key)) = (tls_cert, tls_key) {
+        let cert_pem = std::fs::read(&cert).expect("failed to read TLS cert");
+        let key_pem = std::fs::read(&key).expect("failed to read TLS key");
+        let tls = ServerTlsConfig::new().identity(Identity::from_pem(cert_pem, key_pem));
+        builder = builder.tls_config(tls)?;
+        info!(%addr, "gRPC gateway listening (TLS)");
+    } else {
+        info!(%addr, "gRPC gateway listening (plaintext)");
+    }
+
+    builder
         .add_service(EnvironmentServiceServer::new(EnvironmentServiceImpl {
             state: state.clone(),
         }))

@@ -66,8 +66,10 @@ async fn main() -> anyhow::Result<()> {
     info!(%addr, "REST API listening");
 
     let grpc_addr: SocketAddr = cfg.server.grpc_bind.parse()?;
+    let tls_cert = cfg.server.tls_cert.clone();
+    let tls_key = cfg.server.tls_key.clone();
     tokio::spawn(async move {
-        if let Err(e) = lv_gateway::server::serve(grpc_addr, gateway_state).await {
+        if let Err(e) = lv_gateway::server::serve(grpc_addr, gateway_state, tls_cert, tls_key).await {
             tracing::error!("gRPC gateway error: {e}");
         }
     });

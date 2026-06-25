@@ -68,7 +68,7 @@ impl UrcAuthApi for AuthApiImpl {
             .try_get("username")
             .map_err(|e| Status::internal(e.to_string()))?;
 
-        let claims = jwt::new_claims(user_id, vec![], self.state.jwt_ttl_secs);
+        let claims = jwt::new_claims(user_id, &username, &self.state.issuer, vec![], self.state.jwt_ttl_secs);
         let token_str = jwt::encode_claims(&claims, &self.state.jwt_secret)
             .map_err(Status::internal)?;
 
@@ -89,7 +89,7 @@ impl UrcAuthApi for AuthApiImpl {
             .filter_map(|s| Uuid::parse_str(s).ok())
             .collect();
 
-        let scoped = jwt::new_claims(base_claims.sub, repos, self.state.jwt_ttl_secs);
+        let scoped = jwt::new_claims(base_claims.sub, &base_claims.name, &self.state.issuer, repos, self.state.jwt_ttl_secs);
         let token_str = jwt::encode_claims(&scoped, &self.state.jwt_secret)
             .map_err(Status::internal)?;
 
@@ -140,9 +140,37 @@ impl UrcAuthApi for AuthApiImpl {
 
     async fn exchange_external_token_for_user_token(
         &self,
-        _: Request<ExchangeExternalTokenForUserTokenRequest>,
+        request: Request<ExchangeExternalTokenForUserTokenRequest>,
     ) -> Result<Response<ExchangeExternalTokenForUserTokenResponse>, Status> {
-        Err(Status::unimplemented("not supported"))
+        let req = request.into_inner();
+        match req.token_type.as_str() {
+            "api-key" => {
+                let hash = lv_auth::token::hash_api_token(&req.external_token);
+                let row = sqlx::query(
+                    r#"SELECT t.user_id, u.username
+                       FROM api_tokens t
+                       JOIN users u ON u.id = t.user_id
+                       WHERE t.token_hash = $1"#,
+                )
+                .bind(&hash)
+                .fetch_optional(&self.state.db)
+                .await
+                .map_err(|e| Status::internal(e.to_string()))?
+                .ok_or_else(|| Status::unauthenticated("invalid api key"))?;
+
+                let user_id: Uuid = row.try_get("user_id").map_err(|e| Status::internal(e.to_string()))?;
+                let username: String = row.try_get("username").map_err(|e| Status::internal(e.to_string()))?;
+
+                let claims = jwt::new_claims(user_id, &username, &self.state.issuer, vec![], self.state.jwt_ttl_secs);
+                let token_str = jwt::encode_claims(&claims, &self.state.jwt_secret)
+                    .map_err(Status::internal)?;
+
+                Ok(Response::new(ExchangeExternalTokenForUserTokenResponse {
+                    user_token: Some(make_user_token(&claims, token_str, &username)),
+                }))
+            }
+            other => Err(Status::unimplemented(format!("token type '{other}' is not supported"))),
+        }
     }
 
     async fn check_user_permission(
