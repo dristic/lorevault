@@ -1,6 +1,7 @@
 use std::pin::Pin;
 
 use bytes::Bytes;
+use deadpool_redis::redis::{AsyncCommands, Script};
 use futures::{Stream, StreamExt};
 use tonic::{Request, Response, Status, Streaming};
 use tokio::sync::mpsc;
@@ -15,6 +16,28 @@ use crate::proto::storage::{
     QueryRequest, QueryResponse, VerifyRequest, VerifyResponse,
 };
 use crate::state::GatewayState;
+
+// Namespaced Redis key for mutable storage entries.
+fn mutable_key(key: &[u8], key_type: u32) -> String {
+    format!("mutable:{}:{}", key_type, hex::encode(key))
+}
+
+// Atomically compares and optionally swaps a Redis key.
+// Returns the value that was present before the operation (empty vec if absent).
+// The swap only occurs when the current value equals `expected`.
+// Setting `new_value` to an empty slice deletes the key.
+static CAS_SCRIPT: &str = r"
+local current = redis.call('GET', KEYS[1])
+if current == false then current = '' end
+if current == ARGV[1] then
+    if ARGV[2] == '' then
+        redis.call('DEL', KEYS[1])
+    else
+        redis.call('SET', KEYS[1], ARGV[2])
+    end
+end
+return current
+";
 
 pub struct StorageServiceImpl {
     pub state: GatewayState,
@@ -301,22 +324,77 @@ impl StorageService for StorageServiceImpl {
 
     async fn mutable_load(
         &self,
-        _: Request<MutableLoadRequest>,
+        request: Request<MutableLoadRequest>,
     ) -> Result<Response<MutableLoadResponse>, Status> {
-        Err(Status::unimplemented("mutable storage not supported"))
+        let req = request.into_inner();
+        let redis_key = mutable_key(&req.key, req.key_type);
+
+        let mut conn = self
+            .state
+            .cache
+            .get()
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        let value: Option<Vec<u8>> = conn
+            .get(&redis_key)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        Ok(Response::new(MutableLoadResponse {
+            value: value.unwrap_or_default(),
+        }))
     }
 
     async fn mutable_store(
         &self,
-        _: Request<MutableStoreRequest>,
+        request: Request<MutableStoreRequest>,
     ) -> Result<Response<MutableStoreResponse>, Status> {
-        Err(Status::unimplemented("mutable storage not supported"))
+        let req = request.into_inner();
+        let redis_key = mutable_key(&req.key, req.key_type);
+
+        let mut conn = self
+            .state
+            .cache
+            .get()
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        if req.value.is_empty() {
+            conn.del::<_, ()>(&redis_key)
+                .await
+                .map_err(|e| Status::internal(e.to_string()))?;
+        } else {
+            conn.set::<_, _, ()>(&redis_key, req.value.as_slice())
+                .await
+                .map_err(|e| Status::internal(e.to_string()))?;
+        }
+
+        Ok(Response::new(MutableStoreResponse {}))
     }
 
     async fn mutable_compare_and_swap(
         &self,
-        _: Request<MutableCompareAndSwapRequest>,
+        request: Request<MutableCompareAndSwapRequest>,
     ) -> Result<Response<MutableCompareAndSwapResponse>, Status> {
-        Err(Status::unimplemented("mutable storage not supported"))
+        let req = request.into_inner();
+        let redis_key = mutable_key(&req.key, req.key_type);
+
+        let mut conn = self
+            .state
+            .cache
+            .get()
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        let current_value: Vec<u8> = Script::new(CAS_SCRIPT)
+            .key(&redis_key)
+            .arg(req.expected.as_slice())
+            .arg(req.value.as_slice())
+            .invoke_async(&mut conn)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        Ok(Response::new(MutableCompareAndSwapResponse { current_value }))
     }
 }
