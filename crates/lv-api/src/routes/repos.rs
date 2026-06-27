@@ -30,6 +30,11 @@ pub struct RepoResponse {
     pub default_branch: String,
 }
 
+#[derive(Serialize)]
+pub struct DeleteRepoResponse {
+    pub id: Uuid,
+}
+
 pub async fn create_repo(
     State(state): State<AppState>,
     Json(req): Json<CreateRepoRequest>,
@@ -107,4 +112,37 @@ pub async fn get_repo(
         visibility,
         default_branch,
     }))
+}
+
+pub async fn delete_repo(
+    State(state): State<AppState>,
+    Path((owner, repo)): Path<(String, String)>,
+) -> Result<Json<DeleteRepoResponse>> {
+    // Resolve by username (user-owned) or org slug (org-owned)
+    let id: Option<Uuid> = sqlx::query_scalar(
+        r#"SELECT r.id
+           FROM repositories r
+           JOIN users u ON r.owner_id = u.id AND r.owner_type = 'user'::owner_type
+           WHERE u.username = $1 AND r.name = $2
+           UNION ALL
+           SELECT r.id
+           FROM repositories r
+           JOIN organizations o ON r.owner_id = o.id AND r.owner_type = 'org'::owner_type
+           WHERE o.slug = $1 AND r.name = $2"#,
+    )
+    .bind(&owner)
+    .bind(&repo)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e: sqlx::Error| ApiError::Internal(e.into()))?;
+
+    let id = id.ok_or(ApiError::NotFound)?;
+    
+    sqlx::query("DELETE FROM repositories WHERE id = $1")
+    .bind(id)
+    .execute(&state.db)
+    .await
+    .map_err(|e: sqlx::Error| ApiError::Internal(e.into()))?;
+
+    Ok(Json(DeleteRepoResponse { id }))
 }
