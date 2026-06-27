@@ -8,6 +8,7 @@ use crate::proto::lock::{
     LockResponse, QueryRequest, QueryResponse, Resource, StatusRequest, StatusResponse,
     UnlockRequest, UnlockResponse,
 };
+use crate::services::auth;
 use crate::state::GatewayState;
 
 pub struct LockServiceImpl {
@@ -203,11 +204,11 @@ impl LockService for LockServiceImpl {
         for resource in resources {
             let branch_id = match bytes_to_uuid(&resource.branch) {
                 Some(id) => id,
-                None => continue,
+                None => continue, // TODO: Error handling.
             };
             let repo_id = match repo_for_branch(&self.state.db, branch_id).await {
                 Ok(id) => id,
-                Err(_) => continue,
+                Err(_) => continue, // TODO: Error handling.
             };
 
             sqlx::query(
@@ -228,8 +229,61 @@ impl LockService for LockServiceImpl {
 
     async fn admin_lock(
         &self,
-        _: Request<AdminLockRequest>,
+        request: Request<AdminLockRequest>,
     ) -> Result<Response<AdminLockResponse>, Status> {
-        Err(Status::unimplemented("admin lock not supported"))
+        let claims = jwt::extract_claims(request.metadata(), &self.state.jwt_secret)?;
+        let resources = request.into_inner().resources;
+        let mut locks = Vec::new();
+
+        for resource in resources {
+            let branch_id = match bytes_to_uuid(&resource.branch) {
+                Some(id) => id,
+                None => continue, // TODO: Error handling.
+            };
+            let repo_id = match repo_for_branch(&self.state.db, branch_id).await {
+                Ok(id) => id,
+                Err(_) => continue, // TODO: Error handling.
+            };
+
+            // Derive the owner of this repo to check admin permissions.
+            let owner_id: Option<Uuid> = sqlx::query_scalar(
+                "SELECT owner_id FROM repositories WHERE id = $1 AND owner_type = 'org'::owner_type"
+            )
+            .bind(repo_id)
+            .fetch_optional(&self.state.db)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+            if let Some(org_id) = owner_id {
+                auth::require_admin(&org_id, &claims, &self.state).await?;
+            }
+
+            // Get lock status for this resource.
+            let row = sqlx::query(
+                "SELECT locked_by_user_id, acquired_at FROM file_locks WHERE repo_id = $1 AND path = $2"
+            )
+            .bind(repo_id)
+            .bind(&resource.description)
+            .fetch_optional(&self.state.db)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+            if let Some(r) = row {
+              let uid: Uuid = r.try_get("locked_by_user_id").unwrap_or(Uuid::nil());
+              let acquired: time::OffsetDateTime =
+                  r.try_get("acquired_at").unwrap_or_else(|_|
+  time::OffsetDateTime::now_utc());
+              locks.push(Lock {
+                  resource: Some(resource),
+                  owner: uid.to_string(),
+                  locked_at: Some(prost_types::Timestamp {
+                      seconds: acquired.unix_timestamp(),
+                      nanos: 0,
+                  }),
+              });
+          }
+      }
+
+      Ok(Response::new(AdminLockResponse { locks }))
     }
 }

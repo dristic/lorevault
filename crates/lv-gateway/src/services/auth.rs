@@ -32,6 +32,26 @@ fn make_user_token(claims: &GatewayClaims, token_str: String, username: &str) ->
     }
 }
 
+pub async fn require_admin(org_id: &Uuid, claims: &GatewayClaims, state: &GatewayState) -> Result<(), Status> {
+    let is_admin = sqlx::query_scalar::<_, bool>(
+        r#"SELECT EXISTS(
+                SELECT 1 from org_members
+                WHERE org_id = $1 AND user_id = $2 AND role IN ('admin', 'owner')
+        )"#,
+    )
+    .bind(org_id)
+    .bind(claims.sub)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| Status::internal(e.to_string()))?;
+
+    if is_admin {
+        Ok(())
+    } else {
+        Err(Status::permission_denied("admin role required"))
+    }
+}
+
 #[tonic::async_trait]
 impl UrcAuthApi for AuthApiImpl {
     async fn health_check(
