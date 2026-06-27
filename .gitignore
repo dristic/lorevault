@@ -1,4 +1,5 @@
 /target
+/requests
 /config/local.toml
 /config/certs/
 *.env

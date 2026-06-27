@@ -1,5 +1,4 @@
 use axum::{
-    async_trait,
     extract::FromRequestParts,
     http::{request::Parts, StatusCode},
     Json,
@@ -22,7 +21,6 @@ pub struct AuthenticatedUser {
     pub user_id: Uuid,
 }
 
-#[async_trait]
 impl FromRequestParts<AppState> for AuthenticatedUser {
     type Rejection = (StatusCode, Json<Value>);
 
