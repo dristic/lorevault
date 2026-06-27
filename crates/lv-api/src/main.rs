@@ -8,11 +8,7 @@ use lv_auth::providers::password::PasswordProvider;
 use lv_gateway::state::GatewayState;
 use lv_storage::blob::BlobStore;
 
-mod config;
-mod error;
-mod extractors;
-mod routes;
-mod state;
+use lv_api::{config::Settings, routes, state::AppState};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -21,7 +17,7 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let cfg = config::Settings::load()?;
+    let cfg = Settings::load()?;
 
     let db = lv_storage::db::connect(&cfg.database.url, cfg.database.max_connections).await?;
     sqlx::migrate!("../../migrations").run(&db).await?;
@@ -30,10 +26,9 @@ async fn main() -> anyhow::Result<()> {
 
     let auth = Arc::new(PasswordProvider::new(db.clone()));
 
-    let app_state = state::AppState::new(cfg.clone(), db.clone(), cache.clone(), auth);
+    let app_state = AppState::new(cfg.clone(), db.clone(), cache.clone(), auth);
     let app = routes::router(app_state);
 
-    // Build blob store
     let object_store: Arc<dyn ObjectStore> = match cfg.storage.backend.as_str() {
         "s3" => {
             let bucket = cfg.storage.s3_bucket.as_deref().unwrap_or("lorevault");
