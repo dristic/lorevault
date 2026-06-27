@@ -21,6 +21,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/auth/tokens", post(auth::create_token))
         // Users
         .route("/api/v1/users/{username}", get(users::get_user))
+        .route("/api/v1/users/me", get(users::get_me))
         // Repos
         .route("/api/v1/repos", post(repos::create_repo))
         .route("/api/v1/repos/{owner}/{repo}", get(repos::get_repo))
