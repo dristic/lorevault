@@ -7,22 +7,8 @@ tls_cert   = "config/certs/localhost.pem"
 tls_key    = "config/certs/localhost-key.pem"
 
 [database]
-url             = "postgres://lorevault:lorevault@localhost/lorevault"
-max_connections = 10
-
-[redis]
-url = "redis://localhost:6379"
+url = "sqlite:./data/lorevault.db"
 
 [auth]
-jwt_secret  = "change-me-in-production"
+jwt_secret   = "change-me-in-production"
 jwt_ttl_secs = 86400  # 24 hours
-
-[storage]
-# backend = "local" uses the local filesystem (no external service required).
-# Set backend = "s3" in production and configure the s3_* keys below.
-backend    = "local"
-local_path = "/tmp/lorevault-blobs"
-
-# s3_bucket  = "lorevault"
-# s3_region  = "us-east-1"
-# s3_endpoint = "..."   # optional: override for S3-compatible endpoints
