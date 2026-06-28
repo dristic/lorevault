@@ -32,20 +32,21 @@ fn make_user_token(claims: &GatewayClaims, token_str: String, username: &str) ->
     }
 }
 
-pub async fn require_admin(org_id: &Uuid, claims: &GatewayClaims, state: &GatewayState) -> Result<(), Status> {
-    let is_admin = sqlx::query_scalar::<_, bool>(
-        r#"SELECT EXISTS(
-                SELECT 1 FROM org_members
-                WHERE org_id = ? AND user_id = ? AND role IN ('admin', 'owner')
-        )"#,
+pub async fn require_admin(
+    org_id: &Uuid,
+    claims: &GatewayClaims,
+    state: &GatewayState,
+) -> Result<(), Status> {
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(1) FROM org_members WHERE org_id = ? AND user_id = ? AND role IN ('admin', 'owner')",
     )
-    .bind(org_id)
-    .bind(claims.sub)
+    .bind(org_id.to_string())
+    .bind(claims.sub.to_string())
     .fetch_one(&state.db)
     .await
     .map_err(|e| Status::internal(e.to_string()))?;
 
-    if is_admin {
+    if count != 0 {
         Ok(())
     } else {
         Err(Status::permission_denied("admin role required"))
@@ -82,16 +83,24 @@ impl UrcAuthApi for AuthApiImpl {
         .map_err(|e| Status::internal(e.to_string()))?
         .ok_or_else(|| Status::unauthenticated("invalid api key"))?;
 
-        let user_id: Uuid = row
+        let user_id_str: String = row
             .try_get("user_id")
             .map_err(|e| Status::internal(e.to_string()))?;
+        let user_id = Uuid::parse_str(&user_id_str)
+            .map_err(|_| Status::internal("invalid user_id in db"))?;
         let username: String = row
             .try_get("username")
             .map_err(|e| Status::internal(e.to_string()))?;
 
-        let claims = jwt::new_claims(user_id, &username, &self.state.issuer, vec![], self.state.jwt_ttl_secs);
-        let token_str = jwt::encode_claims(&claims, &self.state.jwt_secret)
-            .map_err(Status::internal)?;
+        let claims = jwt::new_claims(
+            user_id,
+            &username,
+            &self.state.issuer,
+            vec![],
+            self.state.jwt_ttl_secs,
+        );
+        let token_str =
+            jwt::encode_claims(&claims, &self.state.jwt_secret).map_err(Status::internal)?;
 
         Ok(Response::new(ExchangeApiKeyForUserTokenResponse {
             user_token: Some(make_user_token(&claims, token_str, &username)),
@@ -110,16 +119,23 @@ impl UrcAuthApi for AuthApiImpl {
             .filter_map(|s| Uuid::parse_str(s).ok())
             .collect();
 
-        let scoped = jwt::new_claims(base_claims.sub, &base_claims.name, &self.state.issuer, repos, self.state.jwt_ttl_secs);
-        let token_str = jwt::encode_claims(&scoped, &self.state.jwt_secret)
-            .map_err(Status::internal)?;
+        let scoped = jwt::new_claims(
+            base_claims.sub,
+            &base_claims.name,
+            &self.state.issuer,
+            repos,
+            self.state.jwt_ttl_secs,
+        );
+        let token_str =
+            jwt::encode_claims(&scoped, &self.state.jwt_secret).map_err(Status::internal)?;
 
-        let username: String = sqlx::query_scalar("SELECT username FROM users WHERE id = ?")
-            .bind(base_claims.sub)
-            .fetch_optional(&self.state.db)
-            .await
-            .map_err(|e| Status::internal(e.to_string()))?
-            .unwrap_or_default();
+        let username: String =
+            sqlx::query_scalar("SELECT username FROM users WHERE id = ?")
+                .bind(base_claims.sub.to_string())
+                .fetch_optional(&self.state.db)
+                .await
+                .map_err(|e| Status::internal(e.to_string()))?
+                .unwrap_or_default();
 
         Ok(Response::new(
             ExchangeUserTokenForMultiresourceTokenResponse {
@@ -168,12 +184,16 @@ impl UrcAuthApi for AuthApiImpl {
         .map_err(|e| Status::internal(e.to_string()))?
         .ok_or_else(|| Status::not_found("session expired or not found"))?;
 
-        let state_str: String = row.try_get("state").map_err(|e| Status::internal(e.to_string()))?;
+        let state_str: String =
+            row.try_get("state").map_err(|e| Status::internal(e.to_string()))?;
 
         let user_token = if state_str == "complete" {
-            let token: String = row.try_get("token").map_err(|e| Status::internal(e.to_string()))?;
-            let user_id: String = row.try_get("user_id").map_err(|e| Status::internal(e.to_string()))?;
-            let username: String = row.try_get("username").map_err(|e| Status::internal(e.to_string()))?;
+            let token: String =
+                row.try_get("token").map_err(|e| Status::internal(e.to_string()))?;
+            let user_id: String =
+                row.try_get("user_id").map_err(|e| Status::internal(e.to_string()))?;
+            let username: String =
+                row.try_get("username").map_err(|e| Status::internal(e.to_string()))?;
 
             let claims = jwt::decode_claims(&token, &self.state.jwt_secret)
                 .map_err(|_| Status::internal("failed to decode session token"))?;
@@ -227,10 +247,22 @@ impl UrcAuthApi for AuthApiImpl {
                 .map_err(|e| Status::internal(e.to_string()))?
                 .ok_or_else(|| Status::unauthenticated("invalid api key"))?;
 
-                let user_id: Uuid = row.try_get("user_id").map_err(|e| Status::internal(e.to_string()))?;
-                let username: String = row.try_get("username").map_err(|e| Status::internal(e.to_string()))?;
+                let user_id_str: String = row
+                    .try_get("user_id")
+                    .map_err(|e| Status::internal(e.to_string()))?;
+                let user_id = Uuid::parse_str(&user_id_str)
+                    .map_err(|_| Status::internal("invalid user_id in db"))?;
+                let username: String = row
+                    .try_get("username")
+                    .map_err(|e| Status::internal(e.to_string()))?;
 
-                let claims = jwt::new_claims(user_id, &username, &self.state.issuer, vec![], self.state.jwt_ttl_secs);
+                let claims = jwt::new_claims(
+                    user_id,
+                    &username,
+                    &self.state.issuer,
+                    vec![],
+                    self.state.jwt_ttl_secs,
+                );
                 let token_str = jwt::encode_claims(&claims, &self.state.jwt_secret)
                     .map_err(Status::internal)?;
 
@@ -238,7 +270,9 @@ impl UrcAuthApi for AuthApiImpl {
                     user_token: Some(make_user_token(&claims, token_str, &username)),
                 }))
             }
-            other => Err(Status::unimplemented(format!("token type '{other}' is not supported"))),
+            other => Err(Status::unimplemented(format!(
+                "token type '{other}' is not supported"
+            ))),
         }
     }
 

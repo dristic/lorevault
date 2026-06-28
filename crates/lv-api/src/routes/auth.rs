@@ -80,18 +80,23 @@ pub async fn login(
         .map_err(ApiError::from)?;
 
     let org_id = if let Some(slug) = &req.org {
-        let org_id: Option<uuid::Uuid> = sqlx::query_scalar(
+        let org_id_str: Option<String> = sqlx::query_scalar(
             r#"SELECT o.id FROM organizations o
                JOIN org_members om ON om.org_id = o.id
                WHERE o.slug = ? AND om.user_id = ?"#,
         )
         .bind(slug)
-        .bind(user_id)
+        .bind(user_id.to_string())
         .fetch_optional(&state.db)
         .await
         .map_err(|e: sqlx::Error| ApiError::Internal(e.into()))?;
 
-        Some(org_id.ok_or(ApiError::Forbidden)?)
+        let org_uuid = org_id_str
+            .ok_or(ApiError::Forbidden)
+            .and_then(|s| {
+                Uuid::parse_str(&s).map_err(|_| ApiError::Forbidden)
+            })?;
+        Some(org_uuid)
     } else {
         None
     };
@@ -124,8 +129,8 @@ pub async fn create_token(
     sqlx::query(
         "INSERT INTO api_tokens (id, user_id, name, token_hash) VALUES (?, ?, ?, ?)",
     )
-    .bind(Uuid::new_v4())
-    .bind(user.user_id)
+    .bind(Uuid::new_v4().to_string())
+    .bind(user.user_id.to_string())
     .bind(&req.name)
     .bind(&hash)
     .execute(&state.db)
@@ -170,7 +175,7 @@ pub async fn browser_login_submit(
     };
 
     let username: String = match sqlx::query_scalar("SELECT username FROM users WHERE id = ?")
-        .bind(user_id)
+        .bind(user_id.to_string())
         .fetch_one(&state.db)
         .await
     {

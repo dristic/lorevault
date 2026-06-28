@@ -53,9 +53,9 @@ pub async fn create_repo(
         r#"INSERT INTO repositories (id, owner_type, owner_id, name, description, visibility, default_branch)
            VALUES (?, ?, ?, ?, ?, ?, 'main')"#,
     )
-    .bind(id)
+    .bind(id.to_string())
     .bind(owner_type_str)
-    .bind(req.owner_id)
+    .bind(req.owner_id.to_string())
     .bind(&req.name)
     .bind(&req.description)
     .bind(vis_str)
@@ -81,8 +81,7 @@ pub async fn get_repo(
     State(state): State<AppState>,
     Path((owner, repo)): Path<(String, String)>,
 ) -> Result<Json<RepoResponse>> {
-    // Resolve by username (user-owned) or org slug (org-owned)
-    let row: Option<(Uuid, String, Option<String>, String, String)> = sqlx::query_as(
+    let row: Option<(String, String, Option<String>, String, String)> = sqlx::query_as(
         r#"SELECT r.id, r.name, r.description, r.visibility, r.default_branch
            FROM repositories r
            JOIN users u ON r.owner_id = u.id AND r.owner_type = 'user'
@@ -101,7 +100,8 @@ pub async fn get_repo(
     .await
     .map_err(|e: sqlx::Error| ApiError::Internal(e.into()))?;
 
-    let (id, name, description, vis_str, default_branch) = row.ok_or(ApiError::NotFound)?;
+    let (id_str, name, description, vis_str, default_branch) = row.ok_or(ApiError::NotFound)?;
+    let id = Uuid::parse_str(&id_str).map_err(|_| ApiError::Internal(anyhow::anyhow!("malformed id")))?;
     let visibility = match vis_str.as_str() {
         "public" => Visibility::Public,
         _ => Visibility::Private,
@@ -120,7 +120,7 @@ pub async fn delete_repo(
     State(state): State<AppState>,
     Path((owner, repo)): Path<(String, String)>,
 ) -> Result<Json<DeleteRepoResponse>> {
-    let id: Option<Uuid> = sqlx::query_scalar(
+    let id_str: Option<String> = sqlx::query_scalar(
         r#"SELECT r.id
            FROM repositories r
            JOIN users u ON r.owner_id = u.id AND r.owner_type = 'user'
@@ -139,10 +139,11 @@ pub async fn delete_repo(
     .await
     .map_err(|e: sqlx::Error| ApiError::Internal(e.into()))?;
 
-    let id = id.ok_or(ApiError::NotFound)?;
+    let id_str = id_str.ok_or(ApiError::NotFound)?;
+    let id = Uuid::parse_str(&id_str).map_err(|_| ApiError::Internal(anyhow::anyhow!("malformed id")))?;
 
     sqlx::query("DELETE FROM repositories WHERE id = ?")
-        .bind(id)
+        .bind(id.to_string())
         .execute(&state.db)
         .await
         .map_err(|e: sqlx::Error| ApiError::Internal(e.into()))?;

@@ -1,8 +1,8 @@
-use sqlx::SqlitePool;
+use sqlx::AnyPool;
 
 #[derive(Clone)]
 pub struct GatewayState {
-    pub db: SqlitePool,
+    pub db: AnyPool,
     pub jwt_secret: String,
     pub jwt_ttl_secs: i64,
     pub issuer: String,
@@ -12,7 +12,7 @@ pub struct GatewayState {
 
 impl GatewayState {
     pub fn new(
-        db: SqlitePool,
+        db: AnyPool,
         jwt_secret: String,
         jwt_ttl_secs: i64,
         server_url: String,
