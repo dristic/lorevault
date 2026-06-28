@@ -15,10 +15,5 @@ thiserror = { workspace = true }
 uuid = { workspace = true }
 time = { workspace = true }
 sqlx = { workspace = true }
-deadpool-redis = { workspace = true }
-redis = { workspace = true }
-object_store = { workspace = true }
-bytes = { workspace = true }
-futures = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }

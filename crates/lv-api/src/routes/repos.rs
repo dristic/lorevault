@@ -51,7 +51,7 @@ pub async fn create_repo(
 
     sqlx::query(
         r#"INSERT INTO repositories (id, owner_type, owner_id, name, description, visibility, default_branch)
-           VALUES ($1, $2::owner_type, $3, $4, $5, $6::visibility, 'main')"#,
+           VALUES (?, ?, ?, ?, ?, ?, 'main')"#,
     )
     .bind(id)
     .bind(owner_type_str)
@@ -62,7 +62,7 @@ pub async fn create_repo(
     .execute(&state.db)
     .await
     .map_err(|e: sqlx::Error| match e {
-        sqlx::Error::Database(ref d) if d.constraint() == Some("repositories_owner_id_name_key") => {
+        sqlx::Error::Database(ref d) if d.is_unique_violation() => {
             ApiError::Conflict(format!("repository '{}' already exists for this owner", req.name))
         }
         e => ApiError::Internal(e.into()),
@@ -83,16 +83,18 @@ pub async fn get_repo(
 ) -> Result<Json<RepoResponse>> {
     // Resolve by username (user-owned) or org slug (org-owned)
     let row: Option<(Uuid, String, Option<String>, String, String)> = sqlx::query_as(
-        r#"SELECT r.id, r.name, r.description, r.visibility::text, r.default_branch
+        r#"SELECT r.id, r.name, r.description, r.visibility, r.default_branch
            FROM repositories r
-           JOIN users u ON r.owner_id = u.id AND r.owner_type = 'user'::owner_type
-           WHERE u.username = $1 AND r.name = $2
+           JOIN users u ON r.owner_id = u.id AND r.owner_type = 'user'
+           WHERE u.username = ? AND r.name = ?
            UNION ALL
-           SELECT r.id, r.name, r.description, r.visibility::text, r.default_branch
+           SELECT r.id, r.name, r.description, r.visibility, r.default_branch
            FROM repositories r
-           JOIN organizations o ON r.owner_id = o.id AND r.owner_type = 'org'::owner_type
-           WHERE o.slug = $1 AND r.name = $2"#,
+           JOIN organizations o ON r.owner_id = o.id AND r.owner_type = 'org'
+           WHERE o.slug = ? AND r.name = ?"#,
     )
+    .bind(&owner)
+    .bind(&repo)
     .bind(&owner)
     .bind(&repo)
     .fetch_optional(&state.db)
@@ -118,18 +120,19 @@ pub async fn delete_repo(
     State(state): State<AppState>,
     Path((owner, repo)): Path<(String, String)>,
 ) -> Result<Json<DeleteRepoResponse>> {
-    // Resolve by username (user-owned) or org slug (org-owned)
     let id: Option<Uuid> = sqlx::query_scalar(
         r#"SELECT r.id
            FROM repositories r
-           JOIN users u ON r.owner_id = u.id AND r.owner_type = 'user'::owner_type
-           WHERE u.username = $1 AND r.name = $2
+           JOIN users u ON r.owner_id = u.id AND r.owner_type = 'user'
+           WHERE u.username = ? AND r.name = ?
            UNION ALL
            SELECT r.id
            FROM repositories r
-           JOIN organizations o ON r.owner_id = o.id AND r.owner_type = 'org'::owner_type
-           WHERE o.slug = $1 AND r.name = $2"#,
+           JOIN organizations o ON r.owner_id = o.id AND r.owner_type = 'org'
+           WHERE o.slug = ? AND r.name = ?"#,
     )
+    .bind(&owner)
+    .bind(&repo)
     .bind(&owner)
     .bind(&repo)
     .fetch_optional(&state.db)
@@ -137,12 +140,12 @@ pub async fn delete_repo(
     .map_err(|e: sqlx::Error| ApiError::Internal(e.into()))?;
 
     let id = id.ok_or(ApiError::NotFound)?;
-    
-    sqlx::query("DELETE FROM repositories WHERE id = $1")
-    .bind(id)
-    .execute(&state.db)
-    .await
-    .map_err(|e: sqlx::Error| ApiError::Internal(e.into()))?;
+
+    sqlx::query("DELETE FROM repositories WHERE id = ?")
+        .bind(id)
+        .execute(&state.db)
+        .await
+        .map_err(|e: sqlx::Error| ApiError::Internal(e.into()))?;
 
     Ok(Json(DeleteRepoResponse { id }))
 }

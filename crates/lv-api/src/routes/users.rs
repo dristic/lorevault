@@ -21,7 +21,7 @@ pub async fn get_user(
     Path(username): Path<String>,
 ) -> Result<Json<UserResponse>> {
     let row: Option<(Uuid, String)> =
-        sqlx::query_as("SELECT id, username FROM users WHERE username = $1")
+        sqlx::query_as("SELECT id, username FROM users WHERE username = ?")
             .bind(&username)
             .fetch_optional(&state.db)
             .await
@@ -36,7 +36,7 @@ pub async fn get_me(
     user: AuthenticatedUser,
 ) -> Result<Json<UserResponse>> {
     let row: Option<(Uuid, String, String)> =
-        sqlx::query_as("SELECT id, username, email FROM users WHERE id = $1")
+        sqlx::query_as("SELECT id, username, email FROM users WHERE id = ?")
             .bind(user.user_id)
             .fetch_optional(&state.db)
             .await

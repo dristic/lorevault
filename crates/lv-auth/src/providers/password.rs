@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -11,29 +11,12 @@ use crate::{
     validate,
 };
 
-/// Username-and-password authentication.
-///
-/// Credentials are stored in `user_identities` with `provider = 'password'`
-/// and `provider_uid = lower(email)`. The `credential_json` column holds
-/// `{ "hash": "<argon2 PHC string>" }`.
-///
-/// # `register` credentials shape
-/// ```json
-/// { "password": "correct-horse-battery-staple" }
-/// ```
-///
-/// # `authenticate` credentials shape
-/// ```json
-/// { "login": "alice",  "password": "..." }
-/// ```
-/// `login` is matched against both `users.username` and the identity's
-/// `provider_uid` (normalised email), so users can sign in with either.
 pub struct PasswordProvider {
-    db: PgPool,
+    db: SqlitePool,
 }
 
 impl PasswordProvider {
-    pub fn new(db: PgPool) -> Self {
+    pub fn new(db: SqlitePool) -> Self {
         Self { db }
     }
 
@@ -58,29 +41,27 @@ impl PasswordProvider {
             .await
             .map_err(|e| AuthError::Internal(e.to_string()))?;
 
-        sqlx::query("INSERT INTO users (id, username, email) VALUES ($1, $2, $3)")
+        sqlx::query("INSERT INTO users (id, username, email) VALUES (?, ?, ?)")
             .bind(user_id)
             .bind(username)
             .bind(email)
             .execute(&mut *tx)
             .await
             .map_err(|e: sqlx::Error| match e {
-                sqlx::Error::Database(ref d)
-                    if d.constraint() == Some("users_username_key") =>
-                {
-                    AuthError::Conflict("username already taken".into())
-                }
-                sqlx::Error::Database(ref d)
-                    if d.constraint() == Some("users_email_key") =>
-                {
-                    AuthError::Conflict("email already registered".into())
+                sqlx::Error::Database(ref d) if d.is_unique_violation() => {
+                    let msg = d.message();
+                    if msg.contains("users.username") {
+                        AuthError::Conflict("username already taken".into())
+                    } else {
+                        AuthError::Conflict("email already registered".into())
+                    }
                 }
                 e => AuthError::Internal(e.to_string()),
             })?;
 
         sqlx::query(
             "INSERT INTO user_identities (id, user_id, provider, provider_uid, credential_json)
-             VALUES ($1, $2, 'password', $3, $4)",
+             VALUES (?, ?, 'password', ?, ?)",
         )
         .bind(Uuid::new_v4())
         .bind(user_id)
@@ -97,21 +78,20 @@ impl PasswordProvider {
         Ok(user_id)
     }
 
-    /// Accepts username or email as `login`.
     #[instrument(skip(self, password_str), fields(login))]
     pub async fn authenticate_with_password(
         &self,
         login: &str,
         password_str: &str,
     ) -> Result<Uuid> {
-        // Match on username OR normalised email (provider_uid).
         let row: Option<(Uuid, Value)> = sqlx::query_as(
             r#"SELECT ui.user_id, ui.credential_json
                FROM user_identities ui
                JOIN users u ON u.id = ui.user_id
                WHERE ui.provider = 'password'
-                 AND (u.username = $1 OR ui.provider_uid = lower($1))"#,
+                 AND (u.username = ? OR ui.provider_uid = lower(?))"#,
         )
+        .bind(login)
         .bind(login)
         .fetch_optional(&self.db)
         .await

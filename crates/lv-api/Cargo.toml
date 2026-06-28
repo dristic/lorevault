@@ -21,7 +21,6 @@ lv-auth = { path = "../lv-auth" }
 lv-storage = { path = "../lv-storage" }
 lv-gateway = { path = "../lv-gateway" }
 tokio        = { workspace = true }
-object_store = { workspace = true }
 axum = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
@@ -35,5 +34,4 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 config = { workspace = true }
 sqlx = { workspace = true }
-deadpool-redis = { workspace = true }
 anyhow = { workspace = true }

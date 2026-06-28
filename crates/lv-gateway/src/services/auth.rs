@@ -1,5 +1,5 @@
-use deadpool_redis::redis::AsyncCommands;
 use sqlx::Row;
+use time::OffsetDateTime;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
@@ -35,8 +35,8 @@ fn make_user_token(claims: &GatewayClaims, token_str: String, username: &str) ->
 pub async fn require_admin(org_id: &Uuid, claims: &GatewayClaims, state: &GatewayState) -> Result<(), Status> {
     let is_admin = sqlx::query_scalar::<_, bool>(
         r#"SELECT EXISTS(
-                SELECT 1 from org_members
-                WHERE org_id = $1 AND user_id = $2 AND role IN ('admin', 'owner')
+                SELECT 1 FROM org_members
+                WHERE org_id = ? AND user_id = ? AND role IN ('admin', 'owner')
         )"#,
     )
     .bind(org_id)
@@ -74,7 +74,7 @@ impl UrcAuthApi for AuthApiImpl {
             r#"SELECT t.user_id, u.username
                FROM api_tokens t
                JOIN users u ON u.id = t.user_id
-               WHERE t.token_hash = $1"#,
+               WHERE t.token_hash = ?"#,
         )
         .bind(&hash)
         .fetch_optional(&self.state.db)
@@ -114,12 +114,11 @@ impl UrcAuthApi for AuthApiImpl {
         let token_str = jwt::encode_claims(&scoped, &self.state.jwt_secret)
             .map_err(Status::internal)?;
 
-        let username: String = sqlx::query("SELECT username FROM users WHERE id = $1")
+        let username: String = sqlx::query_scalar("SELECT username FROM users WHERE id = ?")
             .bind(base_claims.sub)
             .fetch_optional(&self.state.db)
             .await
             .map_err(|e| Status::internal(e.to_string()))?
-            .and_then(|r| r.try_get::<String, _>("username").ok())
             .unwrap_or_default();
 
         Ok(Response::new(
@@ -136,15 +135,11 @@ impl UrcAuthApi for AuthApiImpl {
         let code_bytes: [u8; 16] = rand::random();
         let session_code = hex::encode(code_bytes);
 
-        let mut conn = self
-            .state
-            .cache
-            .get()
-            .await
-            .map_err(|e| Status::internal(e.to_string()))?;
-
-        let key = format!("auth:session:{session_code}");
-        conn.set_ex::<_, _, ()>(&key, r#"{"state":"pending"}"#, 600u64)
+        let expires_at = OffsetDateTime::now_utc().unix_timestamp() + 600;
+        sqlx::query("INSERT INTO auth_sessions (code, expires_at) VALUES (?, ?)")
+            .bind(&session_code)
+            .bind(expires_at)
+            .execute(&self.state.db)
             .await
             .map_err(|e| Status::internal(e.to_string()))?;
 
@@ -161,33 +156,36 @@ impl UrcAuthApi for AuthApiImpl {
         request: Request<GetAuthSessionRequest>,
     ) -> Result<Response<GetAuthSessionResponse>, Status> {
         let session_code = request.into_inner().session_code;
+        let now = OffsetDateTime::now_utc().unix_timestamp();
 
-        let mut conn = self
-            .state
-            .cache
-            .get()
-            .await
-            .map_err(|e| Status::internal(e.to_string()))?;
+        let row = sqlx::query(
+            "SELECT state, token, user_id, username FROM auth_sessions WHERE code = ? AND expires_at > ?",
+        )
+        .bind(&session_code)
+        .bind(now)
+        .fetch_optional(&self.state.db)
+        .await
+        .map_err(|e| Status::internal(e.to_string()))?
+        .ok_or_else(|| Status::not_found("session expired or not found"))?;
 
-        let key = format!("auth:session:{session_code}");
-        let raw: Option<String> = conn
-            .get(&key)
-            .await
-            .map_err(|e| Status::internal(e.to_string()))?;
+        let state_str: String = row.try_get("state").map_err(|e| Status::internal(e.to_string()))?;
 
-        let raw = raw.ok_or_else(|| Status::not_found("session expired or not found"))?;
+        let user_token = if state_str == "complete" {
+            let token: String = row.try_get("token").map_err(|e| Status::internal(e.to_string()))?;
+            let user_id: String = row.try_get("user_id").map_err(|e| Status::internal(e.to_string()))?;
+            let username: String = row.try_get("username").map_err(|e| Status::internal(e.to_string()))?;
 
-        let session: serde_json::Value =
-            serde_json::from_str(&raw).map_err(|e| Status::internal(e.to_string()))?;
+            let claims = jwt::decode_claims(&token, &self.state.jwt_secret)
+                .map_err(|_| Status::internal("failed to decode session token"))?;
 
-        let user_token = match session["state"].as_str() {
-            Some("complete") => Some(UserToken {
-                user_token: session["token"].as_str().unwrap_or_default().to_string(),
-                user_id: session["user_id"].as_str().unwrap_or_default().to_string(),
-                user_name: session["username"].as_str().unwrap_or_default().to_string(),
-                expires_at: session["expires_at"].as_i64().unwrap_or_default(),
-            }),
-            _ => None,
+            Some(UserToken {
+                user_token: token,
+                user_id,
+                user_name: username,
+                expires_at: claims.exp,
+            })
+        } else {
+            None
         };
 
         Ok(Response::new(GetAuthSessionResponse { user_token }))
@@ -221,7 +219,7 @@ impl UrcAuthApi for AuthApiImpl {
                     r#"SELECT t.user_id, u.username
                        FROM api_tokens t
                        JOIN users u ON u.id = t.user_id
-                       WHERE t.token_hash = $1"#,
+                       WHERE t.token_hash = ?"#,
                 )
                 .bind(&hash)
                 .fetch_optional(&self.state.db)

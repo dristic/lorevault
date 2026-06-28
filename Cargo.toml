@@ -37,14 +37,7 @@ prost-types = "0.14"
 tokio-stream = "0.1"
 
 # Database
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "time", "json"] }
-
-# Cache
-deadpool-redis = { version = "0.18" }
-redis = { version = "0.27", features = ["tokio-comp"] }
-
-# Object storage
-object_store = { version = "0.11", features = ["aws"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "uuid", "time", "json"] }
 
 # Auth
 argon2 = "0.5"
@@ -70,13 +63,6 @@ time = { version = "0.3", features = ["serde"] }
 bytes = "1"
 futures = "0.3"
 async-trait = "0.1"
-
-# Lore VCS — path deps from local checkout at ../../lore
-lore-server   = { path = "../../lore/lore-server" }
-lore-proto    = { path = "../../lore/lore-proto" }
-lore-storage  = { path = "../../lore/lore-storage" }
-lore-base     = { path = "../../lore/lore-base" }
-lore-revision = { path = "../../lore/lore-revision" }
 
 [workspace.lints.rust]
 warnings = "deny"

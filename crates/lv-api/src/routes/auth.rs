@@ -5,9 +5,9 @@ use axum::{
     response::Html,
     Form, Json,
 };
-use deadpool_redis::redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use lv_auth::{
@@ -102,7 +102,7 @@ pub async fn create_token(
     let (raw, hash) = api_token::generate_api_token();
 
     sqlx::query(
-        "INSERT INTO api_tokens (id, user_id, name, token_hash) VALUES ($1, $2, $3, $4)",
+        "INSERT INTO api_tokens (id, user_id, name, token_hash) VALUES (?, ?, ?, ?)",
     )
     .bind(Uuid::new_v4())
     .bind(user.user_id)
@@ -149,7 +149,7 @@ pub async fn browser_login_submit(
         Err(_) => return Html(login_form_html(&form.session, Some("Invalid credentials."))),
     };
 
-    let username: String = match sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
+    let username: String = match sqlx::query_scalar("SELECT username FROM users WHERE id = ?")
         .bind(user_id)
         .fetch_one(&state.db)
         .await
@@ -178,26 +178,18 @@ pub async fn browser_login_submit(
         Err(_) => return Html(login_form_html(&form.session, Some("Internal error."))),
     };
 
-    let session_data = json!({
-        "state": "complete",
-        "token": token,
-        "user_id": user_id.to_string(),
-        "username": username,
-        "expires_at": claims.exp,
-    })
-    .to_string();
-
-    let mut conn = match state.cache.get().await {
-        Ok(c) => c,
-        Err(_) => return Html(login_form_html(&form.session, Some("Internal error."))),
-    };
-
-    let key = format!("auth:session:{}", form.session);
     // Keep the completed session alive long enough for the CLI to poll it.
-    let _: () = conn
-        .set_ex(&key, &session_data, 120u64)
-        .await
-        .unwrap_or(());
+    let expires_at = OffsetDateTime::now_utc().unix_timestamp() + 120;
+    let _ = sqlx::query(
+        "UPDATE auth_sessions SET state = 'complete', token = ?, user_id = ?, username = ?, expires_at = ? WHERE code = ?",
+    )
+    .bind(&token)
+    .bind(user_id.to_string())
+    .bind(&username)
+    .bind(expires_at)
+    .bind(&form.session)
+    .execute(&state.db)
+    .await;
 
     Html(login_success_html())
 }
@@ -255,7 +247,7 @@ fn login_success_html() -> String {
 <head>
   <meta charset="utf-8">
   <title>LoreVault — Authorised</title>
-  <style>body {{ font-family: sans-serif; max-width: 400px; margin: 80px auto; padding: 0 1rem; }}</style>
+  <style>body { font-family: sans-serif; max-width: 400px; margin: 80px auto; padding: 0 1rem; }</style>
 </head>
 <body>
   <h2>Authorisation successful</h2>
