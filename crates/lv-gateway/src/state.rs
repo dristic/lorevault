@@ -6,6 +6,7 @@ pub struct GatewayState {
     pub jwt_secret: String,
     pub jwt_ttl_secs: i64,
     pub issuer: String,
+    pub server_url: String,
     pub web_url: String,
 }
 
@@ -26,6 +27,7 @@ impl GatewayState {
             jwt_secret,
             jwt_ttl_secs,
             issuer,
+            server_url,
             web_url,
         }
     }

@@ -5,7 +5,10 @@ use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tracing::info;
 
 use crate::proto::auth_api::urc_auth_api_server::UrcAuthApiServer;
+use crate::proto::lore_environment_v1::environment_service_server::EnvironmentServiceServer as EnvironmentServiceServerV1;
+use crate::proto::urc::rpc::environment_service_server::EnvironmentServiceServer;
 use crate::services::auth::AuthApiImpl;
+use crate::services::environment::EnvironmentServiceImpl;
 use crate::state::GatewayState;
 
 pub async fn serve(
@@ -15,7 +18,10 @@ pub async fn serve(
     tls_key: Option<String>,
 ) -> Result<()> {
     let mut builder = Server::builder();
-    if let (Some(cert), Some(key)) = (tls_cert, tls_key) {
+    if let (Some(cert), Some(key)) = (
+        tls_cert.filter(|s| !s.is_empty()),
+        tls_key.filter(|s| !s.is_empty()),
+    ) {
         let cert_pem = std::fs::read(&cert)?;
         let key_pem = std::fs::read(&key)?;
         let tls = ServerTlsConfig::new().identity(Identity::from_pem(cert_pem, key_pem));
@@ -25,8 +31,12 @@ pub async fn serve(
         info!(%addr, "gRPC auth service listening (plaintext)");
     }
 
+    let env_svc = EnvironmentServiceImpl::new(&state);
+
     builder
-        .add_service(UrcAuthApiServer::new(AuthApiImpl { state }))
+        .add_service(UrcAuthApiServer::new(AuthApiImpl { state: state.clone() }))
+        .add_service(EnvironmentServiceServer::new(env_svc.clone()))
+        .add_service(EnvironmentServiceServerV1::new(env_svc))
         .serve(addr)
         .await?;
 

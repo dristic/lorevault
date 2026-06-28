@@ -19,17 +19,29 @@ certs:
     mkcert -install
     mkcert -cert-file config/certs/localhost.pem -key-file config/certs/localhost-key.pem localhost 127.0.0.1 ::1
 
-# ── Database ──────────────────────────────────────────────────────────────────
-
-# Run pending sqlx migrations against the local database
-migrate:
-    sqlx migrate run --database-url postgres://lorevault:lorevault@localhost/lorevault
-
 # ── Server ────────────────────────────────────────────────────────────────────
 
-# Run the API + gRPC gateway (start `just deps` first; run this in its own terminal)
+# Run the API + gRPC auth service (migrations run automatically on startup)
 server:
     cargo run -p lv-api
+
+# Run with debug logging for all LoreVault crates + SQL query logging
+[unix]
+dev:
+    RUST_LOG=lv_api=debug,lv_gateway=debug,lv_auth=debug,lv_storage=debug,sqlx=debug cargo run -p lv-api
+
+[windows]
+dev:
+    $env:RUST_LOG = "lv_api=debug,lv_gateway=debug,lv_auth=debug,lv_storage=debug,sqlx=debug"; cargo run -p lv-api
+
+# Run with full trace logging (very noisy — includes tower/tonic internals)
+[unix]
+trace:
+    RUST_LOG=trace cargo run -p lv-api
+
+[windows]
+trace:
+    $env:RUST_LOG = "trace"; cargo run -p lv-api
 
 # ── Build / test / lint ───────────────────────────────────────────────────────
 

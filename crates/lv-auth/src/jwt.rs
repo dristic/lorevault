@@ -13,6 +13,9 @@ pub struct Claims {
     pub exp: i64,
     /// Issued at (Unix timestamp)
     pub iat: i64,
+    /// Organization scope — None for personal (unscoped) tokens
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub org: Option<Uuid>,
 }
 
 pub struct JwtConfig {
@@ -22,12 +25,13 @@ pub struct JwtConfig {
 }
 
 impl JwtConfig {
-    pub fn encode(&self, user_id: Uuid) -> Result<String> {
+    pub fn encode(&self, user_id: Uuid, org_id: Option<Uuid>) -> Result<String> {
         let now = OffsetDateTime::now_utc().unix_timestamp();
         let claims = Claims {
             sub: user_id,
             iat: now,
             exp: now + self.ttl_secs,
+            org: org_id,
         };
         encode(
             &Header::new(Algorithm::HS256),

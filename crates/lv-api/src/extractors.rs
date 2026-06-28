@@ -19,6 +19,7 @@ use crate::state::AppState;
 /// Returns `401 Unauthorized` if the header is missing, malformed, or the token is expired.
 pub struct AuthenticatedUser {
     pub user_id: Uuid,
+    pub org_id: Option<Uuid>,
 }
 
 impl FromRequestParts<AppState> for AuthenticatedUser {
@@ -48,6 +49,7 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
 
         Ok(AuthenticatedUser {
             user_id: claims.sub,
+            org_id: claims.org,
         })
     }
 }
