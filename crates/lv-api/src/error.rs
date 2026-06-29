@@ -28,9 +28,9 @@ pub enum ApiError {
 impl From<AuthError> for ApiError {
     fn from(e: AuthError) -> Self {
         match e {
-            AuthError::InvalidCredentials
-            | AuthError::TokenExpired
-            | AuthError::TokenInvalid => ApiError::Unauthorized,
+            AuthError::InvalidCredentials | AuthError::TokenExpired | AuthError::TokenInvalid => {
+                ApiError::Unauthorized
+            }
             AuthError::InsufficientScope => ApiError::Forbidden,
             AuthError::Validation(msg) => ApiError::BadRequest(msg),
             AuthError::Conflict(msg) => ApiError::Conflict(msg),
@@ -50,9 +50,16 @@ impl IntoResponse for ApiError {
             ApiError::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
             ApiError::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
             ApiError::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
-            ApiError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
+            ApiError::Internal(e) => {
+                tracing::error!("internal server error: {e:#}");
+                (StatusCode::INTERNAL_SERVER_ERROR, "internal")
+            }
         };
-        (status, Json(json!({ "error": self.to_string(), "code": code }))).into_response()
+        (
+            status,
+            Json(json!({ "error": self.to_string(), "code": code })),
+        )
+            .into_response()
     }
 }
 
