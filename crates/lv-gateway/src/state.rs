@@ -1,11 +1,12 @@
+use std::sync::Arc;
+
+use lv_auth::jwt::JwtConfig;
 use sqlx::AnyPool;
 
 #[derive(Clone)]
 pub struct GatewayState {
     pub db: AnyPool,
-    pub jwt_secret: String,
-    pub jwt_ttl_secs: i64,
-    pub issuer: String,
+    pub jwt: Arc<JwtConfig>,
     pub server_url: String,
     pub web_url: String,
 }
@@ -13,22 +14,10 @@ pub struct GatewayState {
 impl GatewayState {
     pub fn new(
         db: AnyPool,
-        jwt_secret: String,
-        jwt_ttl_secs: i64,
+        jwt: Arc<JwtConfig>,
         server_url: String,
         web_url: String,
     ) -> Self {
-        let issuer = server_url
-            .split_once("://")
-            .map(|(_, rest)| rest.split(':').next().unwrap_or(rest).to_string())
-            .unwrap_or_else(|| server_url.clone());
-        Self {
-            db,
-            jwt_secret,
-            jwt_ttl_secs,
-            issuer,
-            server_url,
-            web_url,
-        }
+        Self { db, jwt, server_url, web_url }
     }
 }

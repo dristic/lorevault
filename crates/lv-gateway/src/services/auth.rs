@@ -1,9 +1,9 @@
+use serde::Deserialize;
 use sqlx::Row;
 use time::OffsetDateTime;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::jwt::{self, GatewayClaims};
 use crate::proto::auth_api::{
     urc_auth_api_server::UrcAuthApi, CheckUserPermissionRequest, CheckUserPermissionResponse,
     ExchangeApiKeyForUserTokenRequest, ExchangeApiKeyForUserTokenResponse,
@@ -23,18 +23,18 @@ pub struct AuthApiImpl {
     pub state: GatewayState,
 }
 
-fn make_user_token(claims: &GatewayClaims, token_str: String, username: &str) -> UserToken {
+fn make_user_token(claims: &lv_auth::jwt::Claims, token_str: String) -> UserToken {
     UserToken {
         user_token: token_str,
         expires_at: claims.exp,
         user_id: claims.sub.to_string(),
-        user_name: username.to_owned(),
+        user_name: claims.preferred_username.clone(),
     }
 }
 
 pub async fn require_admin(
     org_id: &Uuid,
-    claims: &GatewayClaims,
+    claims: &lv_auth::jwt::Claims,
     state: &GatewayState,
 ) -> Result<(), Status> {
     let count: i64 = sqlx::query_scalar(
@@ -51,6 +51,39 @@ pub async fn require_admin(
     } else {
         Err(Status::permission_denied("admin role required"))
     }
+}
+
+fn extract_claims(
+    meta: &tonic::metadata::MetadataMap,
+    config: &lv_auth::jwt::JwtConfig,
+) -> Result<lv_auth::jwt::Claims, Status> {
+    let token = meta
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .ok_or_else(|| Status::unauthenticated("missing authorization header"))?;
+
+    lv_auth::jwt::decode(config, token).map_err(|e| match e {
+        lv_auth::error::AuthError::TokenExpired => Status::unauthenticated("token expired"),
+        _ => Status::unauthenticated("invalid token"),
+    })
+}
+
+/// Decodes only the `exp` claim without verifying the signature or algorithm.
+/// Safe to use on tokens we issued ourselves (e.g. session tokens from our own auth service).
+fn decode_exp_insecure(token: &str) -> Result<i64, jsonwebtoken::errors::Error> {
+    #[derive(Deserialize)]
+    struct Exp {
+        exp: i64,
+    }
+    let header = jsonwebtoken::decode_header(token)?;
+    let key = jsonwebtoken::DecodingKey::from_secret(&[]);
+    let mut validation = jsonwebtoken::Validation::new(header.alg);
+    validation.insecure_disable_signature_validation();
+    validation.validate_exp = false;
+    validation.validate_aud = false;
+    validation.required_spec_claims.clear();
+    jsonwebtoken::decode::<Exp>(token, &key, &validation).map(|d| d.claims.exp)
 }
 
 #[tonic::async_trait]
@@ -92,18 +125,13 @@ impl UrcAuthApi for AuthApiImpl {
             .try_get("username")
             .map_err(|e| Status::internal(e.to_string()))?;
 
-        let claims = jwt::new_claims(
-            user_id,
-            &username,
-            &self.state.issuer,
-            vec![],
-            self.state.jwt_ttl_secs,
-        );
-        let token_str =
-            jwt::encode_claims(&claims, &self.state.jwt_secret).map_err(Status::internal)?;
+        let token_str = lv_auth::jwt::encode(&self.state.jwt, user_id, &username, None)
+            .map_err(|e| Status::internal(e.to_string()))?;
+        let claims = lv_auth::jwt::decode(&self.state.jwt, &token_str)
+            .map_err(|_| Status::internal("failed to decode freshly issued token"))?;
 
         Ok(Response::new(ExchangeApiKeyForUserTokenResponse {
-            user_token: Some(make_user_token(&claims, token_str, &username)),
+            user_token: Some(make_user_token(&claims, token_str)),
         }))
     }
 
@@ -111,7 +139,7 @@ impl UrcAuthApi for AuthApiImpl {
         &self,
         request: Request<ExchangeUserTokenForMultiresourceTokenRequest>,
     ) -> Result<Response<ExchangeUserTokenForMultiresourceTokenResponse>, Status> {
-        let base_claims = jwt::extract_claims(request.metadata(), &self.state.jwt_secret)?;
+        let base_claims = extract_claims(request.metadata(), &self.state.jwt)?;
         let resource_ids = request.into_inner().resource_id;
 
         let repos: Vec<Uuid> = resource_ids
@@ -119,27 +147,19 @@ impl UrcAuthApi for AuthApiImpl {
             .filter_map(|s| Uuid::parse_str(s).ok())
             .collect();
 
-        let scoped = jwt::new_claims(
+        let token_str = lv_auth::jwt::encode_scoped(
+            &self.state.jwt,
             base_claims.sub,
-            &base_claims.name,
-            &self.state.issuer,
+            &base_claims.preferred_username,
             repos,
-            self.state.jwt_ttl_secs,
-        );
-        let token_str =
-            jwt::encode_claims(&scoped, &self.state.jwt_secret).map_err(Status::internal)?;
-
-        let username: String =
-            sqlx::query_scalar("SELECT username FROM users WHERE id = ?")
-                .bind(base_claims.sub.to_string())
-                .fetch_optional(&self.state.db)
-                .await
-                .map_err(|e| Status::internal(e.to_string()))?
-                .unwrap_or_default();
+        )
+        .map_err(|e| Status::internal(e.to_string()))?;
+        let scoped_claims = lv_auth::jwt::decode(&self.state.jwt, &token_str)
+            .map_err(|_| Status::internal("failed to decode freshly issued token"))?;
 
         Ok(Response::new(
             ExchangeUserTokenForMultiresourceTokenResponse {
-                token: Some(make_user_token(&scoped, token_str, &username)),
+                token: Some(make_user_token(&scoped_claims, token_str)),
             },
         ))
     }
@@ -195,14 +215,14 @@ impl UrcAuthApi for AuthApiImpl {
             let username: String =
                 row.try_get("username").map_err(|e| Status::internal(e.to_string()))?;
 
-            let claims = jwt::decode_claims(&token, &self.state.jwt_secret)
-                .map_err(|_| Status::internal("failed to decode session token"))?;
+            let exp = decode_exp_insecure(&token)
+                .map_err(|_| Status::internal("failed to read token expiry"))?;
 
             Some(UserToken {
                 user_token: token,
                 user_id,
                 user_name: username,
-                expires_at: claims.exp,
+                expires_at: exp,
             })
         } else {
             None
@@ -256,18 +276,14 @@ impl UrcAuthApi for AuthApiImpl {
                     .try_get("username")
                     .map_err(|e| Status::internal(e.to_string()))?;
 
-                let claims = jwt::new_claims(
-                    user_id,
-                    &username,
-                    &self.state.issuer,
-                    vec![],
-                    self.state.jwt_ttl_secs,
-                );
-                let token_str = jwt::encode_claims(&claims, &self.state.jwt_secret)
-                    .map_err(Status::internal)?;
+                let token_str =
+                    lv_auth::jwt::encode(&self.state.jwt, user_id, &username, None)
+                        .map_err(|e| Status::internal(e.to_string()))?;
+                let claims = lv_auth::jwt::decode(&self.state.jwt, &token_str)
+                    .map_err(|_| Status::internal("failed to decode freshly issued token"))?;
 
                 Ok(Response::new(ExchangeExternalTokenForUserTokenResponse {
-                    user_token: Some(make_user_token(&claims, token_str, &username)),
+                    user_token: Some(make_user_token(&claims, token_str)),
                 }))
             }
             other => Err(Status::unimplemented(format!(

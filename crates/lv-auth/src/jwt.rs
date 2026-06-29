@@ -7,23 +7,32 @@ use uuid::Uuid;
 
 use crate::error::{AuthError, Result};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
-    /// Issuer
     pub iss: String,
-    /// Subject: user ID
     pub sub: Uuid,
-    /// Expiry (Unix timestamp)
     pub exp: i64,
-    /// Issued at (Unix timestamp)
     pub iat: i64,
-    /// Organization scope — None for personal (unscoped) tokens
+    /// Audience — hostnames this token is valid for (used by Lore CLI domain check).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub aud: Vec<String>,
+    /// Display name (Lore CLI reads `name` from the JWT).
+    #[serde(skip_serializing_if = "String::is_empty", default)]
+    pub name: String,
+    #[serde(skip_serializing_if = "String::is_empty", default)]
+    pub preferred_username: String,
+    /// Organization scope — None for personal (unscoped) tokens.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub org: Option<Uuid>,
+    /// Repository scope for multiresource tokens issued by the gRPC gateway.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub repos: Vec<Uuid>,
 }
 
 pub struct JwtConfig {
     pub issuer: String,
+    /// Hostnames this server serves; written into `aud` so Lore's domain check passes.
+    pub audience: Vec<String>,
     pub encoding_key: EncodingKey,
     pub decoding_key: DecodingKey,
     /// TTL in seconds
@@ -33,13 +42,17 @@ pub struct JwtConfig {
 }
 
 impl JwtConfig {
-    pub fn from_rsa_pem(issuer: String, private_pem: &[u8], ttl_seconds: i64) -> Result<Self> {
+    pub fn from_rsa_pem(
+        issuer: String,
+        audience: Vec<String>,
+        private_pem: &[u8],
+        ttl_seconds: i64,
+    ) -> Result<Self> {
         let encoding_key = EncodingKey::from_rsa_pem(private_pem)
             .map_err(|e| AuthError::Internal(e.to_string()))?;
         let decoding_key = DecodingKey::from_rsa_pem(private_pem)
             .map_err(|e| AuthError::Internal(e.to_string()))?;
 
-        // Pregenerate our JWKS
         let pem_str =
             std::str::from_utf8(private_pem).map_err(|e| AuthError::Internal(e.to_string()))?;
 
@@ -55,6 +68,7 @@ impl JwtConfig {
 
         Ok(Self {
             issuer,
+            audience,
             encoding_key,
             decoding_key,
             ttl_seconds,
@@ -63,14 +77,46 @@ impl JwtConfig {
     }
 }
 
-pub fn encode(config: &JwtConfig, user_id: Uuid, org_id: Option<Uuid>) -> Result<String> {
+pub fn encode(config: &JwtConfig, user_id: Uuid, username: &str, org_id: Option<Uuid>) -> Result<String> {
     let now = OffsetDateTime::now_utc().unix_timestamp();
     let claims = Claims {
         iss: config.issuer.clone(),
+        aud: config.audience.clone(),
         sub: user_id,
+        name: username.to_string(),
+        preferred_username: username.to_string(),
         iat: now,
         exp: now + config.ttl_seconds,
         org: org_id,
+        repos: vec![],
+    };
+
+    jsonwebtoken::encode(
+        &Header::new(Algorithm::RS256),
+        &claims,
+        &config.encoding_key,
+    )
+    .map_err(|e| AuthError::Internal(e.to_string()))
+}
+
+/// Encode a multiresource token scoped to specific repository IDs.
+pub fn encode_scoped(
+    config: &JwtConfig,
+    user_id: Uuid,
+    username: &str,
+    repos: Vec<Uuid>,
+) -> Result<String> {
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    let claims = Claims {
+        iss: config.issuer.clone(),
+        aud: config.audience.clone(),
+        sub: user_id,
+        name: username.to_string(),
+        preferred_username: username.to_string(),
+        iat: now,
+        exp: now + config.ttl_seconds,
+        org: None,
+        repos,
     };
 
     jsonwebtoken::encode(
@@ -84,6 +130,7 @@ pub fn encode(config: &JwtConfig, user_id: Uuid, org_id: Option<Uuid>) -> Result
 pub fn decode(config: &JwtConfig, token: &str) -> Result<Claims> {
     let mut validation = Validation::new(Algorithm::RS256);
     validation.set_issuer(&[&config.issuer]);
+    validation.validate_aud = false;
     jsonwebtoken::decode::<Claims>(token, &config.decoding_key, &validation)
         .map(|d| d.claims)
         .map_err(|e| match e.kind() {

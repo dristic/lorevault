@@ -22,21 +22,26 @@ async fn main() -> anyhow::Result<()> {
 
     let auth = Arc::new(PasswordProvider::new(db.clone()));
 
-    // Load JWT config
+    // Load JWT config — audience is the gRPC hostname so Lore's domain check passes.
     let private_pem = std::fs::read(&cfg.auth.jwt_private_key_pem)?;
+    let grpc_hostname = cfg.server.public_url
+        .split_once("://")
+        .and_then(|(_, rest)| rest.split(':').next())
+        .unwrap_or(&cfg.server.public_url)
+        .to_string();
     let jwt = Arc::new(JwtConfig::from_rsa_pem(
         cfg.auth.jwt_issuer.clone(),
+        vec![grpc_hostname],
         &private_pem,
         cfg.auth.jwt_ttl_secs,
     )?);
 
-    let app_state = AppState::new(cfg.clone(), db.clone(), auth, jwt);
+    let app_state = AppState::new(cfg.clone(), db.clone(), auth, jwt.clone());
     let app = routes::router(app_state);
 
     let gateway_state = GatewayState::new(
         db,
-        String::from("FIXME: no secret key"),
-        cfg.auth.jwt_ttl_secs,
+        jwt.clone(),
         cfg.server.public_url.clone(),
         cfg.server.web_url.clone(),
     );

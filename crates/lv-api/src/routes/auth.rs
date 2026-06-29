@@ -41,7 +41,7 @@ pub async fn register(
         .auth
         .register(
             NewUser {
-                username: req.username,
+                username: req.username.clone(),
                 email: req.email,
             },
             json!({ "password": req.password }),
@@ -49,7 +49,7 @@ pub async fn register(
         .await
         .map_err(ApiError::from)?;
 
-    let token = issue_jwt(&state, user_id, None)?;
+    let token = issue_jwt(&state, user_id, &req.username, None)?;
     Ok(Json(AuthResponse { token, user_id }))
 }
 
@@ -75,6 +75,12 @@ pub async fn login(
         .await
         .map_err(ApiError::from)?;
 
+    let username: String = sqlx::query_scalar("SELECT username FROM users WHERE id = ?")
+        .bind(user_id.to_string())
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e: sqlx::Error| ApiError::Internal(e.into()))?;
+
     let org_id = if let Some(slug) = &req.org {
         let org_id_str: Option<String> = sqlx::query_scalar(
             r#"SELECT o.id FROM organizations o
@@ -95,7 +101,7 @@ pub async fn login(
         None
     };
 
-    let token = issue_jwt(&state, user_id, org_id)?;
+    let token = issue_jwt(&state, user_id, &username, org_id)?;
     Ok(Json(AuthResponse { token, user_id }))
 }
 
@@ -173,7 +179,7 @@ pub async fn browser_login_submit(
         Err(_) => return Html(login_form_html(&form.session, Some("Internal error."))),
     };
 
-    let token = match jwt::encode(&state.jwt, user_id, None) {
+    let token = match jwt::encode(&state.jwt, user_id, &username, None) {
         Ok(t) => t,
         Err(_) => return Html(login_form_html(&form.session, Some("Internal error."))),
     };
@@ -196,8 +202,8 @@ pub async fn browser_login_submit(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn issue_jwt(state: &AppState, user_id: Uuid, org_id: Option<Uuid>) -> Result<String> {
-    jwt::encode(&state.jwt, user_id, org_id)
+fn issue_jwt(state: &AppState, user_id: Uuid, username: &str, org_id: Option<Uuid>) -> Result<String> {
+    jwt::encode(&state.jwt, user_id, username, org_id)
         .map_err(|e| ApiError::Internal(anyhow::anyhow!(e.to_string())))
 }
 
