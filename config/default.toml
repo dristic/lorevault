@@ -10,5 +10,6 @@ tls_key    = "config/certs/localhost-key.pem"
 url = "sqlite:./data/lorevault.db"
 
 [auth]
-jwt_secret   = "change-me-in-production"
-jwt_ttl_secs = 86400  # 24 hours
+jwt_issuer          = "http://localhost:3000"
+jwt_private_key_pem = "config/jwt_private.pem"
+jwt_ttl_secs        = 86400  # 24 hours

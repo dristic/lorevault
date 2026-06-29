@@ -3,7 +3,7 @@ use std::{net::SocketAddr, sync::Arc};
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use lv_auth::providers::password::PasswordProvider;
+use lv_auth::{jwt::JwtConfig, providers::password::PasswordProvider};
 use lv_gateway::state::GatewayState;
 
 use lv_api::{config::Settings, routes, state::AppState};
@@ -22,12 +22,20 @@ async fn main() -> anyhow::Result<()> {
 
     let auth = Arc::new(PasswordProvider::new(db.clone()));
 
-    let app_state = AppState::new(cfg.clone(), db.clone(), auth);
+    // Load JWT config
+    let private_pem = std::fs::read(&cfg.auth.jwt_private_key_pem)?;
+    let jwt = Arc::new(JwtConfig::from_rsa_pem(
+        cfg.auth.jwt_issuer.clone(),
+        &private_pem,
+        cfg.auth.jwt_ttl_secs,
+    )?);
+
+    let app_state = AppState::new(cfg.clone(), db.clone(), auth, jwt);
     let app = routes::router(app_state);
 
     let gateway_state = GatewayState::new(
         db,
-        cfg.auth.jwt_secret.clone(),
+        String::from("FIXME: no secret key"),
         cfg.auth.jwt_ttl_secs,
         cfg.server.public_url.clone(),
         cfg.server.web_url.clone(),
@@ -40,7 +48,8 @@ async fn main() -> anyhow::Result<()> {
     let tls_cert = cfg.server.tls_cert.clone();
     let tls_key = cfg.server.tls_key.clone();
     tokio::spawn(async move {
-        if let Err(e) = lv_gateway::server::serve(grpc_addr, gateway_state, tls_cert, tls_key).await {
+        if let Err(e) = lv_gateway::server::serve(grpc_addr, gateway_state, tls_cert, tls_key).await
+        {
             tracing::error!("gRPC auth service error: {e}");
         }
     });

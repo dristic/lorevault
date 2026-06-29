@@ -5,6 +5,7 @@
 /requests
 /config/local.toml
 /config/certs/
+/config/jwt_private.pem
 *.env
 .env*
 **/*.rs.bk

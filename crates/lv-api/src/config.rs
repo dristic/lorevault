@@ -30,7 +30,8 @@ pub struct DatabaseConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AuthConfig {
-    pub jwt_secret: String,
+    pub jwt_issuer: String,
+    pub jwt_private_key_pem: String,
     pub jwt_ttl_secs: i64,
 }
 

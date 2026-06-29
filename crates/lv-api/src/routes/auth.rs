@@ -10,11 +10,7 @@ use serde_json::json;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use lv_auth::{
-    jwt::JwtConfig,
-    provider::NewUser,
-    token as api_token,
-};
+use lv_auth::{jwt, provider::NewUser, token as api_token};
 
 use crate::{
     error::{ApiError, Result},
@@ -93,9 +89,7 @@ pub async fn login(
 
         let org_uuid = org_id_str
             .ok_or(ApiError::Forbidden)
-            .and_then(|s| {
-                Uuid::parse_str(&s).map_err(|_| ApiError::Forbidden)
-            })?;
+            .and_then(|s| Uuid::parse_str(&s).map_err(|_| ApiError::Forbidden))?;
         Some(org_uuid)
     } else {
         None
@@ -126,16 +120,14 @@ pub async fn create_token(
 ) -> Result<Json<CreateTokenResponse>> {
     let (raw, hash) = api_token::generate_api_token();
 
-    sqlx::query(
-        "INSERT INTO api_tokens (id, user_id, name, token_hash) VALUES (?, ?, ?, ?)",
-    )
-    .bind(Uuid::new_v4().to_string())
-    .bind(user.user_id.to_string())
-    .bind(&req.name)
-    .bind(&hash)
-    .execute(&state.db)
-    .await
-    .map_err(|e: sqlx::Error| ApiError::Internal(e.into()))?;
+    sqlx::query("INSERT INTO api_tokens (id, user_id, name, token_hash) VALUES (?, ?, ?, ?)")
+        .bind(Uuid::new_v4().to_string())
+        .bind(user.user_id.to_string())
+        .bind(&req.name)
+        .bind(&hash)
+        .execute(&state.db)
+        .await
+        .map_err(|e: sqlx::Error| ApiError::Internal(e.into()))?;
 
     Ok(Json(CreateTokenResponse {
         token: raw,
@@ -146,9 +138,7 @@ pub async fn create_token(
 // ── Browser-based login (Lore CLI device flow) ────────────────────────────────
 
 /// `GET /login?session=<code>` — serve the HTML login form.
-pub async fn browser_login_form(
-    Query(params): Query<HashMap<String, String>>,
-) -> Html<String> {
+pub async fn browser_login_form(Query(params): Query<HashMap<String, String>>) -> Html<String> {
     let session = params.get("session").cloned().unwrap_or_default();
     Html(login_form_html(&session, None))
 }
@@ -183,22 +173,7 @@ pub async fn browser_login_submit(
         Err(_) => return Html(login_form_html(&form.session, Some("Internal error."))),
     };
 
-    let issuer = state
-        .config
-        .server
-        .public_url
-        .split_once("://")
-        .map(|(_, rest)| rest.split(':').next().unwrap_or(rest).to_string())
-        .unwrap_or_else(|| state.config.server.public_url.clone());
-
-    let claims = lv_gateway::jwt::new_claims(
-        user_id,
-        &username,
-        &issuer,
-        vec![],
-        state.config.auth.jwt_ttl_secs,
-    );
-    let token = match lv_gateway::jwt::encode_claims(&claims, &state.config.auth.jwt_secret) {
+    let token = match jwt::encode(&state.jwt, user_id, None) {
         Ok(t) => t,
         Err(_) => return Html(login_form_html(&form.session, Some("Internal error."))),
     };
@@ -222,12 +197,8 @@ pub async fn browser_login_submit(
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn issue_jwt(state: &AppState, user_id: Uuid, org_id: Option<Uuid>) -> Result<String> {
-    JwtConfig {
-        secret: state.config.auth.jwt_secret.clone(),
-        ttl_secs: state.config.auth.jwt_ttl_secs,
-    }
-    .encode(user_id, org_id)
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!(e.to_string())))
+    jwt::encode(&state.jwt, user_id, org_id)
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!(e.to_string())))
 }
 
 fn login_form_html(session: &str, error: Option<&str>) -> String {

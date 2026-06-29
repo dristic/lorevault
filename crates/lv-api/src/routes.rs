@@ -9,10 +9,13 @@ pub mod auth;
 pub mod health;
 pub mod repos;
 pub mod users;
+pub mod well_known;
 
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(health::healthz))
+        // Well-known public JWKS
+        .route("/.well-known/jwks.json", get(well_known::jwks))
         // Browser-based login (Lore CLI device flow)
         .route("/login", get(auth::browser_login_form).post(auth::browser_login_submit))
         // Auth API

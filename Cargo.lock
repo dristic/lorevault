@@ -1139,10 +1139,12 @@ version = "0.1.0"
 dependencies = [
  "argon2",
  "async-trait",
+ "base64 0.22.1",
  "hex",
  "jsonwebtoken",
  "lv-core",
  "rand",
+ "rsa",
  "serde",
  "serde_json",
  "sha2",

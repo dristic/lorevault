@@ -6,7 +6,7 @@ use axum::{
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use lv_auth::jwt::JwtConfig;
+use lv_auth::jwt;
 
 use crate::state::AppState;
 
@@ -30,15 +30,13 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
         let token = bearer_token(parts).ok_or_else(|| {
-            rejection(StatusCode::UNAUTHORIZED, "missing or invalid authorization header")
+            rejection(
+                StatusCode::UNAUTHORIZED,
+                "missing or invalid authorization header",
+            )
         })?;
 
-        let jwt = JwtConfig {
-            secret: state.config.auth.jwt_secret.clone(),
-            ttl_secs: state.config.auth.jwt_ttl_secs,
-        };
-
-        let claims = jwt.decode(token).map_err(|e| {
+        let claims = jwt::decode(&state.jwt, token).map_err(|e| {
             use lv_auth::error::AuthError;
             let msg = match e {
                 AuthError::TokenExpired => "token has expired",
