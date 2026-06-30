@@ -35,3 +35,4 @@ tracing-subscriber = { workspace = true }
 config = { workspace = true }
 sqlx = { workspace = true }
 anyhow = { workspace = true }
+url = "2.5.8"

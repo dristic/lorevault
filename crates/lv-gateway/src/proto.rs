@@ -15,3 +15,7 @@ pub mod urc {
 pub mod lore_environment_v1 {
     tonic::include_proto!("lore.environment.v1");
 }
+
+pub mod rebac {
+    tonic::include_proto!("ucs.auth");
+}

@@ -15,9 +15,7 @@ pub struct EnvironmentServiceImpl {
 
 impl EnvironmentServiceImpl {
     pub fn new(state: &GatewayState) -> Self {
-        let auth_url = state
-            .server_url
-            .replacen("grpcs://", "ucs-auth://", 1);
+        let auth_url = state.server_url.replacen("grpcs://", "ucs-auth://", 1);
         Self { auth_url }
     }
 }

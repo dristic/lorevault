@@ -33,6 +33,8 @@ pub struct AuthConfig {
     pub jwt_issuer: String,
     pub jwt_private_key_pem: String,
     pub jwt_ttl_secs: i64,
+    #[serde(default)]
+    pub jwt_extra_audience: Vec<String>,
 }
 
 impl Settings {

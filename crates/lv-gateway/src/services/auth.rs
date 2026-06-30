@@ -142,9 +142,13 @@ impl UrcAuthApi for AuthApiImpl {
         let base_claims = extract_claims(request.metadata(), &self.state.jwt)?;
         let resource_ids = request.into_inner().resource_id;
 
+        // Resource IDs arrive as "urc-{hex}" from the Lore CLI; strip the prefix before parsing.
         let repos: Vec<Uuid> = resource_ids
             .iter()
-            .filter_map(|s| Uuid::parse_str(s).ok())
+            .filter_map(|s| {
+                let hex = s.strip_prefix("urc-").unwrap_or(s);
+                Uuid::parse_str(hex).ok()
+            })
             .collect();
 
         let token_str = lv_auth::jwt::encode_scoped(
@@ -210,17 +214,17 @@ impl UrcAuthApi for AuthApiImpl {
         let user_token = if state_str == "complete" {
             let token: String =
                 row.try_get("token").map_err(|e| Status::internal(e.to_string()))?;
-            let user_id: String =
-                row.try_get("user_id").map_err(|e| Status::internal(e.to_string()))?;
             let username: String =
                 row.try_get("username").map_err(|e| Status::internal(e.to_string()))?;
 
             let exp = decode_exp_insecure(&token)
                 .map_err(|_| Status::internal("failed to read token expiry"))?;
 
+            // Use username as user_id so the CLI credential store is keyed by
+            // the human-readable name and --identity <username> works.
             Some(UserToken {
                 user_token: token,
-                user_id,
+                user_id: username.clone(),
                 user_name: username,
                 expires_at: exp,
             })

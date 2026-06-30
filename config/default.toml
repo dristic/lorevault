@@ -1,7 +1,7 @@
 [server]
 bind       = "0.0.0.0:3000"
 grpc_bind  = "0.0.0.0:9001"
-public_url = "grpcs://localhost:9001"
+public_url = "https://localhost:9001"
 web_url    = "http://localhost:3000"
 tls_cert   = "config/certs/localhost.pem"
 tls_key    = "config/certs/localhost-key.pem"
@@ -10,6 +10,7 @@ tls_key    = "config/certs/localhost-key.pem"
 url = "sqlite:./data/lorevault.db"
 
 [auth]
-jwt_issuer          = "http://localhost:3000"
-jwt_private_key_pem = "config/jwt_private.pem"
-jwt_ttl_secs        = 86400  # 24 hours
+jwt_issuer           = "http://localhost:3000"
+jwt_private_key_pem  = "config/jwt_private.pem"
+jwt_ttl_secs         = 86400  # 24 hours
+jwt_extra_audience   = ["localhost", "127.0.0.1"]

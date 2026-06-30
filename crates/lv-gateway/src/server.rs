@@ -6,9 +6,11 @@ use tracing::info;
 
 use crate::proto::auth_api::urc_auth_api_server::UrcAuthApiServer;
 use crate::proto::lore_environment_v1::environment_service_server::EnvironmentServiceServer as EnvironmentServiceServerV1;
+use crate::proto::rebac::rebac_api_server::RebacApiServer;
 use crate::proto::urc::rpc::environment_service_server::EnvironmentServiceServer;
 use crate::services::auth::AuthApiImpl;
 use crate::services::environment::EnvironmentServiceImpl;
+use crate::services::rebac::RebacApiImpl;
 use crate::state::GatewayState;
 
 pub async fn serve(
@@ -37,6 +39,7 @@ pub async fn serve(
         .add_service(UrcAuthApiServer::new(AuthApiImpl { state: state.clone() }))
         .add_service(EnvironmentServiceServer::new(env_svc.clone()))
         .add_service(EnvironmentServiceServerV1::new(env_svc))
+        .add_service(RebacApiServer::new(RebacApiImpl))
         .serve(addr)
         .await?;
 

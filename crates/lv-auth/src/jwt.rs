@@ -8,6 +8,12 @@ use uuid::Uuid;
 use crate::error::{AuthError, Result};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LoreResourcePermission {
+    resource_id: String,
+    permission: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
     pub iss: String,
     pub sub: Uuid,
@@ -21,12 +27,19 @@ pub struct Claims {
     pub name: String,
     #[serde(skip_serializing_if = "String::is_empty", default)]
     pub preferred_username: String,
+    /// Required by lore-server's JWTUserInfo deserializer; identifies the auth environment.
+    #[serde(skip_serializing_if = "String::is_empty", default)]
+    pub env: String,
     /// Organization scope — None for personal (unscoped) tokens.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub org: Option<Uuid>,
-    /// Repository scope for multiresource tokens issued by the gRPC gateway.
+    /// Resources that this token has access to.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub repos: Vec<Uuid>,
+    pub resources: Vec<LoreResourcePermission>,
+    /// Identity provider — required by lore-server's AuthorizationToken deserializer.
+    /// Always emitted (even as empty string) so decode::<AuthorizationToken> succeeds
+    /// and the resources field is read rather than falling back to JWTUserInfo.
+    pub idp: String,
 }
 
 pub struct JwtConfig {
@@ -48,16 +61,18 @@ impl JwtConfig {
         private_pem: &[u8],
         ttl_seconds: i64,
     ) -> Result<Self> {
-        let encoding_key = EncodingKey::from_rsa_pem(private_pem)
-            .map_err(|e| AuthError::Internal(e.to_string()))?;
-        let decoding_key = DecodingKey::from_rsa_pem(private_pem)
-            .map_err(|e| AuthError::Internal(e.to_string()))?;
-
         let pem_str =
             std::str::from_utf8(private_pem).map_err(|e| AuthError::Internal(e.to_string()))?;
 
         let rsa_key = RsaPrivateKey::from_pkcs8_pem(pem_str)
             .map_err(|e| AuthError::Internal(e.to_string()))?;
+
+        let encoding_key = EncodingKey::from_rsa_pem(private_pem)
+            .map_err(|e| AuthError::Internal(e.to_string()))?;
+        let decoding_key = DecodingKey::from_rsa_raw_components(
+            &rsa_key.n().to_bytes_be(),
+            &rsa_key.e().to_bytes_be(),
+        );
 
         let n = URL_SAFE_NO_PAD.encode(rsa_key.n().to_bytes_be());
         let e = URL_SAFE_NO_PAD.encode(rsa_key.e().to_bytes_be());
@@ -77,7 +92,12 @@ impl JwtConfig {
     }
 }
 
-pub fn encode(config: &JwtConfig, user_id: Uuid, username: &str, org_id: Option<Uuid>) -> Result<String> {
+pub fn encode(
+    config: &JwtConfig,
+    user_id: Uuid,
+    username: &str,
+    org_id: Option<Uuid>,
+) -> Result<String> {
     let now = OffsetDateTime::now_utc().unix_timestamp();
     let claims = Claims {
         iss: config.issuer.clone(),
@@ -85,18 +105,18 @@ pub fn encode(config: &JwtConfig, user_id: Uuid, username: &str, org_id: Option<
         sub: user_id,
         name: username.to_string(),
         preferred_username: username.to_string(),
+        env: config.issuer.clone(),
         iat: now,
         exp: now + config.ttl_seconds,
         org: org_id,
-        repos: vec![],
+        resources: vec![],
+        idp: String::new(),
     };
 
-    jsonwebtoken::encode(
-        &Header::new(Algorithm::RS256),
-        &claims,
-        &config.encoding_key,
-    )
-    .map_err(|e| AuthError::Internal(e.to_string()))
+    let mut header = Header::new(Algorithm::RS256);
+    header.kid = Some("1".to_string());
+    jsonwebtoken::encode(&header, &claims, &config.encoding_key)
+        .map_err(|e| AuthError::Internal(e.to_string()))
 }
 
 /// Encode a multiresource token scoped to specific repository IDs.
@@ -107,24 +127,33 @@ pub fn encode_scoped(
     repos: Vec<Uuid>,
 ) -> Result<String> {
     let now = OffsetDateTime::now_utc().unix_timestamp();
+
+    let resources = repos
+        .iter()
+        .map(|r| LoreResourcePermission {
+            resource_id: format!("urc-{}", r.as_simple()),
+            permission: vec!["read".to_string(), "write".to_string()],
+        })
+        .collect::<Vec<LoreResourcePermission>>();
+
     let claims = Claims {
         iss: config.issuer.clone(),
         aud: config.audience.clone(),
         sub: user_id,
         name: username.to_string(),
         preferred_username: username.to_string(),
+        env: config.issuer.clone(),
         iat: now,
         exp: now + config.ttl_seconds,
         org: None,
-        repos,
+        resources,
+        idp: String::new(),
     };
 
-    jsonwebtoken::encode(
-        &Header::new(Algorithm::RS256),
-        &claims,
-        &config.encoding_key,
-    )
-    .map_err(|e| AuthError::Internal(e.to_string()))
+    let mut header = Header::new(Algorithm::RS256);
+    header.kid = Some("1".to_string());
+    jsonwebtoken::encode(&header, &claims, &config.encoding_key)
+        .map_err(|e| AuthError::Internal(e.to_string()))
 }
 
 pub fn decode(config: &JwtConfig, token: &str) -> Result<Claims> {
@@ -133,8 +162,11 @@ pub fn decode(config: &JwtConfig, token: &str) -> Result<Claims> {
     validation.validate_aud = false;
     jsonwebtoken::decode::<Claims>(token, &config.decoding_key, &validation)
         .map(|d| d.claims)
-        .map_err(|e| match e.kind() {
-            jsonwebtoken::errors::ErrorKind::ExpiredSignature => AuthError::TokenExpired,
-            _ => AuthError::TokenInvalid,
+        .map_err(|e| {
+            tracing::warn!(error = %e, "JWT decode failed");
+            match e.kind() {
+                jsonwebtoken::errors::ErrorKind::ExpiredSignature => AuthError::TokenExpired,
+                _ => AuthError::TokenInvalid,
+            }
         })
 }
