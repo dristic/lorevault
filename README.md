@@ -1,6 +1,6 @@
 # LoreVault
 
-A self-hostable storage and authentication service for [Lore](https://github.com/EpicGames/lore) repositories. LoreVault adds user accounts, organizations, repository management, and access control on top of the Lore VCS protocol.
+A self-hostable storage and authentication service for [Lore](https://github.com/EpicGames/lore) repositories. LoreVault adds user accounts, repository management, and access control on top of the Lore VCS protocol.
 
 > **Status:** Early development. Core scaffold is in place; gRPC gateway and full auth middleware are in progress.
 
@@ -20,20 +20,17 @@ This will build the project in a container with the rust toolchain then build a 
 
 ## Local Development
 
-**Prerequisites:** `cargo`, `docker compose`, `sqlx-cli`
+**Prerequisites:** `cargo`, `sqlx-cli`
 
 ```bash
-# 1. Start dependencies (Postgres, Redis, MinIO)
-docker compose -f docker/docker-compose.yml up -d
+# 1. Run database migrations (creates ./data/lorevault.db if it doesn't exist)
+sqlx migrate run --database-url sqlite:./data/lorevault.db
 
-# 2. Run database migrations
-sqlx migrate run --database-url postgres://lorevault:lorevault@localhost/lorevault
-
-# 3. Start the server
+# 2. Start the server
 cargo run -p lv-api
 ```
 
-The REST API is available at `http://localhost:3000` and the gRPC gateway at `localhost:50051`.
+No external services are required — LoreVault runs against a single SQLite file. The REST API is available at `http://localhost:3000` and the gRPC gateway at `localhost:9001`.
 
 Configuration is loaded from `config/default.toml`. Override locally by creating `config/local.toml` (git-ignored) or via environment variables prefixed with `LV__` (e.g. `LV__AUTH__JWT_SECRET=...`).
 

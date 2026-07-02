@@ -1,18 +1,17 @@
-use serde::Deserialize;
 use sqlx::Row;
 use time::OffsetDateTime;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
+use crate::proto::auth_api::{target_user, ResourcePermission};
 use crate::proto::auth_api::{
     urc_auth_api_server::UrcAuthApi, CheckUserPermissionRequest, CheckUserPermissionResponse,
     ExchangeApiKeyForUserTokenRequest, ExchangeApiKeyForUserTokenResponse,
     ExchangeExternalTokenForUserTokenRequest, ExchangeExternalTokenForUserTokenResponse,
-    ExchangeUserTokenForMultiresourceTokenRequest,
-    ExchangeUserTokenForMultiresourceTokenResponse, GetAuthSessionRequest,
-    GetAuthSessionResponse, GetProviderUserIdRequest, GetProviderUserIdResponse,
-    GetUserIdRequest, GetUserIdResponse, GetUserInfoRequest, GetUserInfoResponse,
-    HealthCheckRequest, HealthCheckResponse, LookupUserPermissionsRequest,
+    ExchangeUserTokenForMultiresourceTokenRequest, ExchangeUserTokenForMultiresourceTokenResponse,
+    GetAuthSessionRequest, GetAuthSessionResponse, GetProviderUserIdRequest,
+    GetProviderUserIdResponse, GetUserIdRequest, GetUserIdResponse, GetUserInfoRequest,
+    GetUserInfoResponse, HealthCheckRequest, HealthCheckResponse, LookupUserPermissionsRequest,
     LookupUserPermissionsResponse, RefreshAuthSessionRequest, RefreshAuthSessionResponse,
     StartAuthSessionRequest, StartAuthSessionResponse, UserToken, VerifyUserRequest,
     VerifyUserResponse,
@@ -53,7 +52,7 @@ pub async fn require_admin(
     }
 }
 
-fn extract_claims(
+pub(crate) fn extract_claims(
     meta: &tonic::metadata::MetadataMap,
     config: &lv_auth::jwt::JwtConfig,
 ) -> Result<lv_auth::jwt::Claims, Status> {
@@ -69,25 +68,32 @@ fn extract_claims(
     })
 }
 
-/// Decodes only the `exp` claim without verifying the signature or algorithm.
-/// Safe to use on tokens we issued ourselves (e.g. session tokens from our own auth service).
-fn decode_exp_insecure(token: &str) -> Result<i64, jsonwebtoken::errors::Error> {
-    #[derive(Deserialize)]
-    struct Exp {
-        exp: i64,
-    }
-    let header = jsonwebtoken::decode_header(token)?;
-    let key = jsonwebtoken::DecodingKey::from_secret(&[]);
-    let mut validation = jsonwebtoken::Validation::new(header.alg);
-    validation.insecure_disable_signature_validation();
-    validation.validate_exp = false;
-    validation.validate_aud = false;
-    validation.required_spec_claims.clear();
-    jsonwebtoken::decode::<Exp>(token, &key, &validation).map(|d| d.claims.exp)
+pub(crate) async fn resolve_repo_permission(
+    state: &GatewayState,
+    repo_id: &Uuid,
+    user_id: &Uuid,
+) -> Result<Vec<String>, Status> {
+    let role: Option<String> =
+        sqlx::query_scalar("SELECT role FROM repo_permissions WHERE repo_id = ? AND user_id = ?")
+            .bind(repo_id.to_string())
+            .bind(user_id.to_string())
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+    let permissions: Vec<String> = match role.as_deref() {
+        Some("admin") => vec!["read".into(), "write".into(), "admin".into()],
+        Some("write") => vec!["read".into(), "write".into()],
+        Some("read") => vec!["read".into()],
+        _ => vec![],
+    };
+
+    Ok(permissions)
 }
 
 #[tonic::async_trait]
 impl UrcAuthApi for AuthApiImpl {
+    #[tracing::instrument(name = "AuthApi::health_check", skip_all, level = "debug")]
     async fn health_check(
         &self,
         _request: Request<HealthCheckRequest>,
@@ -97,6 +103,11 @@ impl UrcAuthApi for AuthApiImpl {
         }))
     }
 
+    #[tracing::instrument(
+        name = "AuthApi::exchange_api_key_for_user_token",
+        skip_all,
+        level = "debug"
+    )]
     async fn exchange_api_key_for_user_token(
         &self,
         request: Request<ExchangeApiKeyForUserTokenRequest>,
@@ -119,8 +130,8 @@ impl UrcAuthApi for AuthApiImpl {
         let user_id_str: String = row
             .try_get("user_id")
             .map_err(|e| Status::internal(e.to_string()))?;
-        let user_id = Uuid::parse_str(&user_id_str)
-            .map_err(|_| Status::internal("invalid user_id in db"))?;
+        let user_id =
+            Uuid::parse_str(&user_id_str).map_err(|_| Status::internal("invalid user_id in db"))?;
         let username: String = row
             .try_get("username")
             .map_err(|e| Status::internal(e.to_string()))?;
@@ -135,6 +146,11 @@ impl UrcAuthApi for AuthApiImpl {
         }))
     }
 
+    #[tracing::instrument(
+        name = "AuthApi::exchange_user_token_for_multiresource_token",
+        skip_all,
+        level = "debug"
+    )]
     async fn exchange_user_token_for_multiresource_token(
         &self,
         request: Request<ExchangeUserTokenForMultiresourceTokenRequest>,
@@ -168,6 +184,7 @@ impl UrcAuthApi for AuthApiImpl {
         ))
     }
 
+    #[tracing::instrument(name = "AuthApi::start_auth_session", skip_all, level = "debug")]
     async fn start_auth_session(
         &self,
         _: Request<StartAuthSessionRequest>,
@@ -191,6 +208,7 @@ impl UrcAuthApi for AuthApiImpl {
         }))
     }
 
+    #[tracing::instrument(name = "AuthApi::get_auth_session", skip_all, level = "debug")]
     async fn get_auth_session(
         &self,
         request: Request<GetAuthSessionRequest>,
@@ -208,16 +226,19 @@ impl UrcAuthApi for AuthApiImpl {
         .map_err(|e| Status::internal(e.to_string()))?
         .ok_or_else(|| Status::not_found("session expired or not found"))?;
 
-        let state_str: String =
-            row.try_get("state").map_err(|e| Status::internal(e.to_string()))?;
+        let state_str: String = row
+            .try_get("state")
+            .map_err(|e| Status::internal(e.to_string()))?;
 
         let user_token = if state_str == "complete" {
-            let token: String =
-                row.try_get("token").map_err(|e| Status::internal(e.to_string()))?;
-            let username: String =
-                row.try_get("username").map_err(|e| Status::internal(e.to_string()))?;
+            let token: String = row
+                .try_get("token")
+                .map_err(|e| Status::internal(e.to_string()))?;
+            let username: String = row
+                .try_get("username")
+                .map_err(|e| Status::internal(e.to_string()))?;
 
-            let exp = decode_exp_insecure(&token)
+            let claims = lv_auth::jwt::decode(&self.state.jwt, &token)
                 .map_err(|_| Status::internal("failed to read token expiry"))?;
 
             // Use username as user_id so the CLI credential store is keyed by
@@ -226,7 +247,7 @@ impl UrcAuthApi for AuthApiImpl {
                 user_token: token,
                 user_id: username.clone(),
                 user_name: username,
-                expires_at: exp,
+                expires_at: claims.exp,
             })
         } else {
             None
@@ -251,6 +272,11 @@ impl UrcAuthApi for AuthApiImpl {
         Err(Status::unimplemented("not supported"))
     }
 
+    #[tracing::instrument(
+        name = "AuthApi::exchange_external_token_for_user_token",
+        skip_all,
+        level = "debug"
+    )]
     async fn exchange_external_token_for_user_token(
         &self,
         request: Request<ExchangeExternalTokenForUserTokenRequest>,
@@ -280,9 +306,8 @@ impl UrcAuthApi for AuthApiImpl {
                     .try_get("username")
                     .map_err(|e| Status::internal(e.to_string()))?;
 
-                let token_str =
-                    lv_auth::jwt::encode(&self.state.jwt, user_id, &username, None)
-                        .map_err(|e| Status::internal(e.to_string()))?;
+                let token_str = lv_auth::jwt::encode(&self.state.jwt, user_id, &username, None)
+                    .map_err(|e| Status::internal(e.to_string()))?;
                 let claims = lv_auth::jwt::decode(&self.state.jwt, &token_str)
                     .map_err(|_| Status::internal("failed to decode freshly issued token"))?;
 
@@ -296,11 +321,56 @@ impl UrcAuthApi for AuthApiImpl {
         }
     }
 
+    #[tracing::instrument(name = "AuthApi::check_user_permission", skip_all, level = "debug")]
     async fn check_user_permission(
         &self,
-        _: Request<CheckUserPermissionRequest>,
+        request: Request<CheckUserPermissionRequest>,
     ) -> Result<Response<CheckUserPermissionResponse>, Status> {
-        Err(Status::unimplemented("not supported"))
+        let claims = extract_claims(request.metadata(), &self.state.jwt)?;
+        let req = request.into_inner();
+
+        let user_id = match req.target_user.and_then(|t| t.user) {
+            // Asking for permissions for a different token than the claims.
+            Some(target_user::User::UserToken(token)) => {
+                lv_auth::jwt::decode(&self.state.jwt, &token)
+                    .map_err(|_| Status::unauthenticated("invalid user token"))?
+                    .sub
+            }
+            // Asking for permissions on behalf of this request's user.
+            None => claims.sub,
+        };
+
+        tracing::debug!(%user_id, "target_user");
+
+        let mut allowed_resource_permission = Vec::new();
+        let mut denied_resource_permission = Vec::new();
+
+        for resource_id in req.resource_id {
+            let hex = resource_id.strip_prefix("urc-").unwrap_or(&resource_id);
+            let permission = match Uuid::parse_str(hex) {
+                Ok(repo_id) => resolve_repo_permission(&self.state, &repo_id, &user_id).await?,
+                Err(_) => vec![],
+            };
+
+            if permission.is_empty() {
+                denied_resource_permission.push(ResourcePermission {
+                    resource_id,
+                    permission,
+                })
+            } else {
+                allowed_resource_permission.push(ResourcePermission {
+                    resource_id,
+                    permission,
+                })
+            }
+        }
+
+        let response = CheckUserPermissionResponse {
+            allowed_resource_permission,
+            denied_resource_permission,
+        };
+
+        Ok(Response::new(response))
     }
 
     async fn lookup_user_permissions(
