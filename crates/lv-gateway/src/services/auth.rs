@@ -31,27 +31,6 @@ fn make_user_token(claims: &lv_auth::jwt::Claims, token_str: String) -> UserToke
     }
 }
 
-pub async fn require_admin(
-    org_id: &Uuid,
-    claims: &lv_auth::jwt::Claims,
-    state: &GatewayState,
-) -> Result<(), Status> {
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(1) FROM org_members WHERE org_id = ? AND user_id = ? AND role IN ('admin', 'owner')",
-    )
-    .bind(org_id.to_string())
-    .bind(claims.sub.to_string())
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| Status::internal(e.to_string()))?;
-
-    if count != 0 {
-        Ok(())
-    } else {
-        Err(Status::permission_denied("admin role required"))
-    }
-}
-
 pub(crate) fn extract_claims(
     meta: &tonic::metadata::MetadataMap,
     config: &lv_auth::jwt::JwtConfig,
@@ -136,7 +115,7 @@ impl UrcAuthApi for AuthApiImpl {
             .try_get("username")
             .map_err(|e| Status::internal(e.to_string()))?;
 
-        let token_str = lv_auth::jwt::encode(&self.state.jwt, user_id, &username, None)
+        let token_str = lv_auth::jwt::encode(&self.state.jwt, user_id, &username)
             .map_err(|e| Status::internal(e.to_string()))?;
         let claims = lv_auth::jwt::decode(&self.state.jwt, &token_str)
             .map_err(|_| Status::internal("failed to decode freshly issued token"))?;
@@ -306,7 +285,7 @@ impl UrcAuthApi for AuthApiImpl {
                     .try_get("username")
                     .map_err(|e| Status::internal(e.to_string()))?;
 
-                let token_str = lv_auth::jwt::encode(&self.state.jwt, user_id, &username, None)
+                let token_str = lv_auth::jwt::encode(&self.state.jwt, user_id, &username)
                     .map_err(|e| Status::internal(e.to_string()))?;
                 let claims = lv_auth::jwt::decode(&self.state.jwt, &token_str)
                     .map_err(|_| Status::internal("failed to decode freshly issued token"))?;

@@ -49,7 +49,7 @@ pub async fn register(
         .await
         .map_err(ApiError::from)?;
 
-    let token = issue_jwt(&state, user_id, &req.username, None)?;
+    let token = issue_jwt(&state, user_id, &req.username)?;
     Ok(Json(AuthResponse { token, user_id }))
 }
 
@@ -60,9 +60,6 @@ pub struct LoginRequest {
     /// Username or email address.
     pub login: String,
     pub password: String,
-    /// Optional org slug to scope the issued token to a specific organization.
-    /// If provided, the user must be a member; returns 403 otherwise.
-    pub org: Option<String>,
 }
 
 pub async fn login(
@@ -81,27 +78,7 @@ pub async fn login(
         .await
         .map_err(|e: sqlx::Error| ApiError::Internal(e.into()))?;
 
-    let org_id = if let Some(slug) = &req.org {
-        let org_id_str: Option<String> = sqlx::query_scalar(
-            r#"SELECT o.id FROM organizations o
-               JOIN org_members om ON om.org_id = o.id
-               WHERE o.slug = ? AND om.user_id = ?"#,
-        )
-        .bind(slug)
-        .bind(user_id.to_string())
-        .fetch_optional(&state.db)
-        .await
-        .map_err(|e: sqlx::Error| ApiError::Internal(e.into()))?;
-
-        let org_uuid = org_id_str
-            .ok_or(ApiError::Forbidden)
-            .and_then(|s| Uuid::parse_str(&s).map_err(|_| ApiError::Forbidden))?;
-        Some(org_uuid)
-    } else {
-        None
-    };
-
-    let token = issue_jwt(&state, user_id, &username, org_id)?;
+    let token = issue_jwt(&state, user_id, &username)?;
     Ok(Json(AuthResponse { token, user_id }))
 }
 
@@ -179,7 +156,7 @@ pub async fn browser_login_submit(
         Err(_) => return Html(login_form_html(&form.session, Some("Internal error."))),
     };
 
-    let token = match jwt::encode(&state.jwt, user_id, &username, None) {
+    let token = match jwt::encode(&state.jwt, user_id, &username) {
         Ok(t) => t,
         Err(_) => return Html(login_form_html(&form.session, Some("Internal error."))),
     };
@@ -202,8 +179,8 @@ pub async fn browser_login_submit(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn issue_jwt(state: &AppState, user_id: Uuid, username: &str, org_id: Option<Uuid>) -> Result<String> {
-    jwt::encode(&state.jwt, user_id, username, org_id)
+fn issue_jwt(state: &AppState, user_id: Uuid, username: &str) -> Result<String> {
+    jwt::encode(&state.jwt, user_id, username)
         .map_err(|e| ApiError::Internal(anyhow::anyhow!(e.to_string())))
 }
 

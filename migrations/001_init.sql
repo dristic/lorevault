@@ -21,22 +21,6 @@ CREATE TABLE user_identities (
 
 CREATE INDEX idx_user_identities_user ON user_identities (user_id);
 
--- Organizations
-
-CREATE TABLE organizations (
-    id           TEXT PRIMARY KEY,
-    slug         TEXT NOT NULL UNIQUE,
-    display_name TEXT NOT NULL,
-    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-);
-
-CREATE TABLE org_members (
-    org_id  TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    role    TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'member')),
-    PRIMARY KEY (org_id, user_id)
-);
-
 -- Auth tokens & SSH keys
 
 CREATE TABLE api_tokens (
@@ -50,20 +34,10 @@ CREATE TABLE api_tokens (
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
-CREATE TABLE ssh_keys (
-    id          TEXT PRIMARY KEY,
-    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name        TEXT NOT NULL,
-    fingerprint TEXT NOT NULL UNIQUE,
-    public_key  TEXT NOT NULL,
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-);
-
 -- Repositories (metadata only — VCS data lives on the external lore-server)
 
 CREATE TABLE repositories (
     id             TEXT PRIMARY KEY,
-    owner_type     TEXT NOT NULL CHECK (owner_type IN ('user', 'org')),
     owner_id       TEXT NOT NULL,
     name           TEXT NOT NULL,
     description    TEXT,

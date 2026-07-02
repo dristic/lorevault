@@ -2,8 +2,6 @@
 
 LoreVault is a self-hostable hosting service for [Lore](https://github.com/EpicGames/lore) repositories, built for individuals and small teams running their own instance with minimal external dependencies. Users own repositories directly; the Lore CLI connects to LoreVault just like it connects to any Lore server.
 
-> **Note:** the schema/models still have organization support (`organizations`, `org_members`, `OwnerType::Org`) left over from an earlier multi-tenant design. That's slated for removal but hasn't happened yet — don't design new features around orgs, and expect this section to simplify further once that cleanup lands.
-
 ## Architecture Overview
 
 ```
@@ -21,7 +19,7 @@ Clients (Lore CLI / Browser / API consumers)
 ┌──────────────┐     ┌──────────────────┐
 │ lv-gateway   │     │   lv-auth        │
 │ (Tonic gRPC) │     │ JWT + API tokens │
-│ Lore protocol│     │ SSH keys / OAuth │
+│ Lore protocol│     │ passwords / OAuth│
 └──────┬───────┘     └──────────────────┘
        │
        ▼
@@ -38,7 +36,7 @@ VCS data (chunks, revisions) lives on the external `lore-server`; `lv-storage` o
 ```
 crates/
   lv-core/        Core domain types, errors, traits shared across crates
-  lv-auth/        Authentication (passwords, JWT, API tokens, SSH, OAuth)
+  lv-auth/        Authentication (passwords, JWT, API tokens, OAuth)
   lv-storage/     Storage abstraction: SQLite (sqlx)
   lv-gateway/     Tonic gRPC server implementing the Lore protocol
   lv-api/         Axum REST API: user/repo management, web hooks
@@ -62,12 +60,15 @@ crates/
 ```
 users            id, username, email, password_hash
 api_tokens       id, user_id, token_hash, scopes, expires_at
-ssh_keys         id, user_id, fingerprint, public_key
-repositories     id, owner_id, name, visibility, default_branch   -- owner is always a user; owner_type/org columns are legacy, being removed
+repositories     id, owner_id, name, visibility, default_branch   -- owner is always a user
 repo_permissions repo_id, user_id, role (admin|write|read)
 ```
 
+Repository rows are created/deleted only via lore-server's ReBAC gRPC callbacks (`lv-gateway/src/services/rebac.rs`), never directly through the REST API — that keeps LoreVault's permission metadata from drifting out of sync with the repos lore-server actually manages. `lv-api`'s repo routes are read-only.
+
 Branches, revisions, chunks (CAS), and file locks are *not* tracked here — that VCS-level data lives entirely on the external `lore-server`; `lv-storage` only holds LoreVault's own account/permission metadata.
+
+SSH key auth (an `ssh_keys` table) was scaffolded early on but never wired up and has been dropped; revisit if/when SSH-based auth is actually implemented.
 
 ## Lore Protocol (gRPC)
 

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-// ── Users & Orgs ─────────────────────────────────────────────────────────────
+// ── Users ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -12,31 +12,7 @@ pub struct User {
     pub created_at: OffsetDateTime,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Organization {
-    pub id: Uuid,
-    pub slug: String,
-    pub display_name: String,
-    pub created_at: OffsetDateTime,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(rename_all = "lowercase")]
-pub enum OrgRole {
-    Owner,
-    Admin,
-    Member,
-}
-
 // ── Repositories ──────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
-#[serde(rename_all = "lowercase")]
-#[sqlx(rename_all = "lowercase")]
-pub enum OwnerType {
-    User,
-    Org,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[serde(rename_all = "lowercase")]
@@ -49,7 +25,6 @@ pub enum Visibility {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Repository {
     pub id: Uuid,
-    pub owner_type: OwnerType,
     pub owner_id: Uuid,
     pub name: String,
     pub description: Option<String>,

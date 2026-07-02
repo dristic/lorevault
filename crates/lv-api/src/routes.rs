@@ -1,5 +1,5 @@
 use axum::{
-    Router, routing::{delete, get, post}
+    Router, routing::{get, post}
 };
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
@@ -26,9 +26,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/users/{username}", get(users::get_user))
         .route("/api/v1/users/me", get(users::get_me))
         // Repos
-        .route("/api/v1/repos", post(repos::create_repo))
         .route("/api/v1/repos/{owner}/{repo}", get(repos::get_repo))
-        .route("/api/v1/repos/{owner}/{repo}", delete(repos::delete_repo))
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
         .with_state(state)

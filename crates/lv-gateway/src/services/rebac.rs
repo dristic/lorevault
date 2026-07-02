@@ -47,8 +47,8 @@ impl RebacApi for RebacApiImpl {
             .map_err(|e| Status::internal(e.to_string()))?;
 
         sqlx::query(
-            r#"INSERT INTO repositories (id, owner_type, owner_id, name, visibility, default_branch)
-               VALUES (?, 'user', ?, ?, 'private', 'main')"#,
+            r#"INSERT INTO repositories (id, owner_id, name, visibility, default_branch)
+               VALUES (?, ?, ?, 'private', 'main')"#,
         )
         .bind(repo_id.to_string())
         .bind(claims.sub.to_string())

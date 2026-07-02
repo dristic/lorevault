@@ -30,9 +30,6 @@ pub struct Claims {
     /// Required by lore-server's JWTUserInfo deserializer; identifies the auth environment.
     #[serde(skip_serializing_if = "String::is_empty", default)]
     pub env: String,
-    /// Organization scope — None for personal (unscoped) tokens.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub org: Option<Uuid>,
     /// Resources that this token has access to.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub resources: Vec<LoreResourcePermission>,
@@ -96,7 +93,6 @@ pub fn encode(
     config: &JwtConfig,
     user_id: Uuid,
     username: &str,
-    org_id: Option<Uuid>,
 ) -> Result<String> {
     let now = OffsetDateTime::now_utc().unix_timestamp();
     let claims = Claims {
@@ -108,7 +104,6 @@ pub fn encode(
         env: config.issuer.clone(),
         iat: now,
         exp: now + config.ttl_seconds,
-        org: org_id,
         resources: vec![],
         idp: String::new(),
     };
@@ -145,7 +140,6 @@ pub fn encode_scoped(
         env: config.issuer.clone(),
         iat: now,
         exp: now + config.ttl_seconds,
-        org: None,
         resources,
         idp: String::new(),
     };
