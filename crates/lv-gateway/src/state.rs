@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use lv_auth::jwt::JwtConfig;
-use sqlx::AnyPool;
+use lv_storage::Storage;
 
 #[derive(Clone)]
 pub struct GatewayState {
-    pub db: AnyPool,
+    pub storage: Arc<dyn Storage>,
     pub jwt: Arc<JwtConfig>,
     pub server_url: String,
     pub web_url: String,
@@ -13,11 +13,11 @@ pub struct GatewayState {
 
 impl GatewayState {
     pub fn new(
-        db: AnyPool,
+        storage: Arc<dyn Storage>,
         jwt: Arc<JwtConfig>,
         server_url: String,
         web_url: String,
     ) -> Self {
-        Self { db, jwt, server_url, web_url }
+        Self { storage, jwt, server_url, web_url }
     }
 }

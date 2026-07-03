@@ -3,6 +3,7 @@ use serde_json::json;
 use thiserror::Error;
 
 use lv_auth::error::AuthError;
+use lv_storage::StorageError;
 
 #[derive(Debug, Error)]
 pub enum ApiError {
@@ -64,3 +65,13 @@ impl IntoResponse for ApiError {
 }
 
 pub type Result<T> = std::result::Result<T, ApiError>;
+
+impl From<StorageError> for ApiError {
+    fn from(e: StorageError) -> Self {
+        match e {
+            StorageError::NotFound => ApiError::NotFound,
+            StorageError::UniqueViolation { field } => ApiError::Conflict(field.to_string()),
+            other => ApiError::Internal(other.into()),
+        }
+    }
+}

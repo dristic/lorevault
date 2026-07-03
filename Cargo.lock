@@ -1120,6 +1120,7 @@ dependencies = [
  "lv-core",
  "lv-gateway",
  "lv-storage",
+ "lv-storage-sqlite",
  "serde",
  "serde_json",
  "sqlx",
@@ -1144,12 +1145,12 @@ dependencies = [
  "hex",
  "jsonwebtoken",
  "lv-core",
+ "lv-storage",
  "rand",
  "rsa",
  "serde",
  "serde_json",
  "sha2",
- "sqlx",
  "thiserror",
  "time",
  "tokio",
@@ -1176,12 +1177,13 @@ dependencies = [
  "hex",
  "jsonwebtoken",
  "lv-auth",
+ "lv-core",
+ "lv-storage",
  "prost",
  "prost-types",
  "rand",
  "serde",
  "serde_json",
- "sqlx",
  "thiserror",
  "time",
  "tokio",
@@ -1198,12 +1200,20 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "lv-core",
- "serde",
- "sqlx",
  "thiserror",
  "time",
- "tokio",
- "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "lv-storage-sqlite"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "lv-core",
+ "lv-storage",
+ "sqlx",
+ "time",
  "uuid",
 ]
 

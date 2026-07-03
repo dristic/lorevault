@@ -40,3 +40,23 @@ pub enum RepoRole {
     Write,
     Read,
 }
+
+// ── Auth sessions (Lore CLI device flow) ───────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[serde(rename_all = "lowercase")]
+#[sqlx(rename_all = "lowercase")]
+pub enum AuthSessionState {
+    Pending,
+    Complete,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthSession {
+    pub code: String,
+    pub state: AuthSessionState,
+    pub token: Option<String>,
+    pub user_id: Option<Uuid>,
+    pub username: Option<String>,
+    pub expires_at: OffsetDateTime,
+}

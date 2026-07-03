@@ -1,8 +1,9 @@
-use sqlx::Row;
-use time::OffsetDateTime;
+use lv_core::models::{AuthSessionState, RepoRole};
+use time::{Duration, OffsetDateTime};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
+use crate::error::map_storage_err;
 use crate::proto::auth_api::{target_user, ResourcePermission};
 use crate::proto::auth_api::{
     urc_auth_api_server::UrcAuthApi, CheckUserPermissionRequest, CheckUserPermissionResponse,
@@ -49,22 +50,20 @@ pub(crate) fn extract_claims(
 
 pub(crate) async fn resolve_repo_permission(
     state: &GatewayState,
-    repo_id: &Uuid,
-    user_id: &Uuid,
+    repo_id: Uuid,
+    user_id: Uuid,
 ) -> Result<Vec<String>, Status> {
-    let role: Option<String> =
-        sqlx::query_scalar("SELECT role FROM repo_permissions WHERE repo_id = ? AND user_id = ?")
-            .bind(repo_id.to_string())
-            .bind(user_id.to_string())
-            .fetch_optional(&state.db)
-            .await
-            .map_err(|e| Status::internal(e.to_string()))?;
+    let role = state
+        .storage
+        .get_repo_permission(repo_id, user_id)
+        .await
+        .map_err(map_storage_err)?;
 
-    let permissions: Vec<String> = match role.as_deref() {
-        Some("admin") => vec!["read".into(), "write".into(), "admin".into()],
-        Some("write") => vec!["read".into(), "write".into()],
-        Some("read") => vec!["read".into()],
-        _ => vec![],
+    let permissions: Vec<String> = match role {
+        Some(RepoRole::Admin) => vec!["read".into(), "write".into(), "admin".into()],
+        Some(RepoRole::Write) => vec!["read".into(), "write".into()],
+        Some(RepoRole::Read) => vec!["read".into()],
+        None => vec![],
     };
 
     Ok(permissions)
@@ -94,26 +93,14 @@ impl UrcAuthApi for AuthApiImpl {
         let api_key = request.into_inner().api_key;
         let hash = lv_auth::token::hash_api_token(&api_key);
 
-        let row = sqlx::query(
-            r#"SELECT t.user_id, u.username
-               FROM api_tokens t
-               JOIN users u ON u.id = t.user_id
-               WHERE t.token_hash = ?"#,
-        )
-        .bind(&hash)
-        .fetch_optional(&self.state.db)
-        .await
-        .map_err(|e| Status::internal(e.to_string()))?
-        .ok_or_else(|| Status::unauthenticated("invalid api key"))?;
-
-        let user_id_str: String = row
-            .try_get("user_id")
-            .map_err(|e| Status::internal(e.to_string()))?;
-        let user_id =
-            Uuid::parse_str(&user_id_str).map_err(|_| Status::internal("invalid user_id in db"))?;
-        let username: String = row
-            .try_get("username")
-            .map_err(|e| Status::internal(e.to_string()))?;
+        let user = self
+            .state
+            .storage
+            .find_user_by_token_hash(&hash)
+            .await
+            .map_err(map_storage_err)?
+            .ok_or_else(|| Status::unauthenticated("invalid api key"))?;
+        let (user_id, username) = (user.id, user.username);
 
         let token_str = lv_auth::jwt::encode(&self.state.jwt, user_id, &username)
             .map_err(|e| Status::internal(e.to_string()))?;
@@ -171,13 +158,12 @@ impl UrcAuthApi for AuthApiImpl {
         let code_bytes: [u8; 16] = rand::random();
         let session_code = hex::encode(code_bytes);
 
-        let expires_at = OffsetDateTime::now_utc().unix_timestamp() + 600;
-        sqlx::query("INSERT INTO auth_sessions (code, expires_at) VALUES (?, ?)")
-            .bind(&session_code)
-            .bind(expires_at)
-            .execute(&self.state.db)
+        let expires_at = OffsetDateTime::now_utc() + Duration::seconds(600);
+        self.state
+            .storage
+            .start_auth_session(&session_code, expires_at)
             .await
-            .map_err(|e| Status::internal(e.to_string()))?;
+            .map_err(map_storage_err)?;
 
         let login_url = format!("{}/login?session={session_code}", self.state.web_url);
 
@@ -193,29 +179,23 @@ impl UrcAuthApi for AuthApiImpl {
         request: Request<GetAuthSessionRequest>,
     ) -> Result<Response<GetAuthSessionResponse>, Status> {
         let session_code = request.into_inner().session_code;
-        let now = OffsetDateTime::now_utc().unix_timestamp();
+        let now = OffsetDateTime::now_utc();
 
-        let row = sqlx::query(
-            "SELECT state, token, user_id, username FROM auth_sessions WHERE code = ? AND expires_at > ?",
-        )
-        .bind(&session_code)
-        .bind(now)
-        .fetch_optional(&self.state.db)
-        .await
-        .map_err(|e| Status::internal(e.to_string()))?
-        .ok_or_else(|| Status::not_found("session expired or not found"))?;
+        let session = self
+            .state
+            .storage
+            .get_auth_session(&session_code, now)
+            .await
+            .map_err(map_storage_err)?
+            .ok_or_else(|| Status::not_found("session expired or not found"))?;
 
-        let state_str: String = row
-            .try_get("state")
-            .map_err(|e| Status::internal(e.to_string()))?;
-
-        let user_token = if state_str == "complete" {
-            let token: String = row
-                .try_get("token")
-                .map_err(|e| Status::internal(e.to_string()))?;
-            let username: String = row
-                .try_get("username")
-                .map_err(|e| Status::internal(e.to_string()))?;
+        let user_token = if session.state == AuthSessionState::Complete {
+            let token = session
+                .token
+                .ok_or_else(|| Status::internal("completed session missing token"))?;
+            let username = session
+                .username
+                .ok_or_else(|| Status::internal("completed session missing username"))?;
 
             let claims = lv_auth::jwt::decode(&self.state.jwt, &token)
                 .map_err(|_| Status::internal("failed to read token expiry"))?;
@@ -264,26 +244,14 @@ impl UrcAuthApi for AuthApiImpl {
         match req.token_type.as_str() {
             "api-key" => {
                 let hash = lv_auth::token::hash_api_token(&req.external_token);
-                let row = sqlx::query(
-                    r#"SELECT t.user_id, u.username
-                       FROM api_tokens t
-                       JOIN users u ON u.id = t.user_id
-                       WHERE t.token_hash = ?"#,
-                )
-                .bind(&hash)
-                .fetch_optional(&self.state.db)
-                .await
-                .map_err(|e| Status::internal(e.to_string()))?
-                .ok_or_else(|| Status::unauthenticated("invalid api key"))?;
-
-                let user_id_str: String = row
-                    .try_get("user_id")
-                    .map_err(|e| Status::internal(e.to_string()))?;
-                let user_id = Uuid::parse_str(&user_id_str)
-                    .map_err(|_| Status::internal("invalid user_id in db"))?;
-                let username: String = row
-                    .try_get("username")
-                    .map_err(|e| Status::internal(e.to_string()))?;
+                let user = self
+                    .state
+                    .storage
+                    .find_user_by_token_hash(&hash)
+                    .await
+                    .map_err(map_storage_err)?
+                    .ok_or_else(|| Status::unauthenticated("invalid api key"))?;
+                let (user_id, username) = (user.id, user.username);
 
                 let token_str = lv_auth::jwt::encode(&self.state.jwt, user_id, &username)
                     .map_err(|e| Status::internal(e.to_string()))?;
@@ -327,7 +295,7 @@ impl UrcAuthApi for AuthApiImpl {
         for resource_id in req.resource_id {
             let hex = resource_id.strip_prefix("urc-").unwrap_or(&resource_id);
             let permission = match Uuid::parse_str(hex) {
-                Ok(repo_id) => resolve_repo_permission(&self.state, &repo_id, &user_id).await?,
+                Ok(repo_id) => resolve_repo_permission(&self.state, repo_id, user_id).await?,
                 Err(_) => vec![],
             };
 

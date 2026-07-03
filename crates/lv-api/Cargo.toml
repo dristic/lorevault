@@ -19,6 +19,7 @@ path = "src/main.rs"
 lv-core = { path = "../lv-core" }
 lv-auth = { path = "../lv-auth" }
 lv-storage = { path = "../lv-storage" }
+lv-storage-sqlite = { path = "../lv-storage-sqlite" }
 lv-gateway = { path = "../lv-gateway" }
 tokio        = { workspace = true }
 axum = { workspace = true }

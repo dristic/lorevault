@@ -9,6 +9,7 @@ workspace = true
 
 [dependencies]
 lv-core = { path = "../lv-core" }
+lv-storage = { path = "../lv-storage" }
 tokio = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
@@ -19,7 +20,6 @@ jsonwebtoken = { workspace = true }
 rand = { workspace = true }
 hex = { workspace = true }
 sha2 = { workspace = true }
-sqlx = { workspace = true }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }

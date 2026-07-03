@@ -9,6 +9,8 @@ workspace = true
 
 [dependencies]
 lv-auth    = { path = "../lv-auth" }
+lv-core    = { path = "../lv-core" }
+lv-storage = { path = "../lv-storage" }
 # Async
 tokio         = { workspace = true }
 # gRPC
@@ -27,7 +29,6 @@ uuid          = { workspace = true }
 time          = { workspace = true }
 tracing       = { workspace = true }
 # Auth / DB
-sqlx          = { workspace = true }
 jsonwebtoken  = { workspace = true }
 rand          = { workspace = true }
 hex           = { workspace = true }

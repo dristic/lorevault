@@ -1,3 +1,4 @@
+use lv_storage::StorageError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -28,3 +29,21 @@ pub enum AuthError {
 }
 
 pub type Result<T> = std::result::Result<T, AuthError>;
+
+impl From<StorageError> for AuthError {
+    fn from(e: StorageError) -> Self {
+        match e {
+            StorageError::NotFound => AuthError::InvalidCredentials,
+            StorageError::UniqueViolation { field: "username" } => {
+                AuthError::Conflict("username already taken".into())
+            }
+            StorageError::UniqueViolation { field: "email" } => {
+                AuthError::Conflict("email already registered".into())
+            }
+            StorageError::UniqueViolation { field } => {
+                AuthError::Conflict(format!("{field} already exists"))
+            }
+            other => AuthError::Internal(other.to_string()),
+        }
+    }
+}

@@ -7,7 +7,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 use lv_auth::{jwt, provider::NewUser, token as api_token};
@@ -72,11 +72,12 @@ pub async fn login(
         .await
         .map_err(ApiError::from)?;
 
-    let username: String = sqlx::query_scalar("SELECT username FROM users WHERE id = ?")
-        .bind(user_id.to_string())
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e: sqlx::Error| ApiError::Internal(e.into()))?;
+    let username = state
+        .storage
+        .get_user_by_id(user_id)
+        .await?
+        .ok_or_else(|| ApiError::Internal(anyhow::anyhow!("authenticated user not found")))?
+        .username;
 
     let token = issue_jwt(&state, user_id, &username)?;
     Ok(Json(AuthResponse { token, user_id }))
@@ -103,14 +104,10 @@ pub async fn create_token(
 ) -> Result<Json<CreateTokenResponse>> {
     let (raw, hash) = api_token::generate_api_token();
 
-    sqlx::query("INSERT INTO api_tokens (id, user_id, name, token_hash) VALUES (?, ?, ?, ?)")
-        .bind(Uuid::new_v4().to_string())
-        .bind(user.user_id.to_string())
-        .bind(&req.name)
-        .bind(&hash)
-        .execute(&state.db)
-        .await
-        .map_err(|e: sqlx::Error| ApiError::Internal(e.into()))?;
+    state
+        .storage
+        .insert_api_token(Uuid::new_v4(), user.user_id, &req.name, &hash)
+        .await?;
 
     Ok(Json(CreateTokenResponse {
         token: raw,
@@ -147,13 +144,9 @@ pub async fn browser_login_submit(
         Err(_) => return Html(login_form_html(&form.session, Some("Invalid credentials."))),
     };
 
-    let username: String = match sqlx::query_scalar("SELECT username FROM users WHERE id = ?")
-        .bind(user_id.to_string())
-        .fetch_one(&state.db)
-        .await
-    {
-        Ok(u) => u,
-        Err(_) => return Html(login_form_html(&form.session, Some("Internal error."))),
+    let username = match state.storage.get_user_by_id(user_id).await {
+        Ok(Some(user)) => user.username,
+        _ => return Html(login_form_html(&form.session, Some("Internal error."))),
     };
 
     let token = match jwt::encode(&state.jwt, user_id, &username) {
@@ -162,17 +155,11 @@ pub async fn browser_login_submit(
     };
 
     // Keep the completed session alive long enough for the CLI to poll it.
-    let expires_at = OffsetDateTime::now_utc().unix_timestamp() + 120;
-    let _ = sqlx::query(
-        "UPDATE auth_sessions SET state = 'complete', token = ?, user_id = ?, username = ?, expires_at = ? WHERE code = ?",
-    )
-    .bind(&token)
-    .bind(user_id.to_string())
-    .bind(&username)
-    .bind(expires_at)
-    .bind(&form.session)
-    .execute(&state.db)
-    .await;
+    let expires_at = OffsetDateTime::now_utc() + Duration::seconds(120);
+    let _ = state
+        .storage
+        .complete_auth_session(&form.session, &token, user_id, &username, expires_at)
+        .await;
 
     Html(login_success_html())
 }

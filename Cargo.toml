@@ -3,6 +3,7 @@ members = [
     "crates/lv-core",
     "crates/lv-auth",
     "crates/lv-storage",
+    "crates/lv-storage-sqlite",
     "crates/lv-gateway",
     "crates/lv-api",
 ]
@@ -36,7 +37,7 @@ prost-types = "0.14"
 tokio-stream = "0.1"
 
 # Database
-sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "any", "uuid", "time", "json"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "uuid", "time", "json"] }
 
 # Auth
 argon2 = "0.5"

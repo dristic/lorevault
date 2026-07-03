@@ -1,7 +1,9 @@
+use lv_core::models::{RepoRole, Visibility};
 use tonic::{Request, Response, Status};
 use tracing::debug;
 use uuid::Uuid;
 
+use crate::error::map_storage_err;
 use crate::proto::rebac::{
     rebac_api_server::RebacApi, CreateResourceRequest, CreateResourceResponse,
     DeleteResourceRequest, DeleteResourceResponse,
@@ -39,32 +41,18 @@ impl RebacApi for RebacApiImpl {
             "rebac: create_resource"
         );
 
-        let mut tx = self
-            .state
-            .db
-            .begin()
+        let mut tx = self.state.storage.begin().await.map_err(map_storage_err)?;
+
+        tx.insert_repository(repo_id, claims.sub, &req.resource_name, Visibility::Private)
             .await
-            .map_err(|e| Status::internal(e.to_string()))?;
+            .map_err(map_storage_err)?;
 
-        sqlx::query(
-            r#"INSERT INTO repositories (id, owner_id, name, visibility, default_branch)
-               VALUES (?, ?, ?, 'private', 'main')"#,
-        )
-        .bind(repo_id.to_string())
-        .bind(claims.sub.to_string())
-        .bind(&req.resource_name)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| Status::internal(e.to_string()))?;
-
-        sqlx::query("INSERT INTO repo_permissions (repo_id, user_id, role) VALUES (?, ?, 'admin')")
-            .bind(repo_id.to_string())
-            .bind(claims.sub.to_string())
-            .execute(&mut *tx)
+        // The caller who creates a repository becomes its admin.
+        tx.insert_repo_permission(repo_id, claims.sub, RepoRole::Admin)
             .await
-            .map_err(|e| Status::internal(e.to_string()))?;
+            .map_err(map_storage_err)?;
 
-        tx.commit().await.map_err(|e| Status::internal(e.to_string()))?;
+        tx.commit().await.map_err(map_storage_err)?;
 
         Ok(Response::new(CreateResourceResponse {}))
     }
@@ -79,17 +67,17 @@ impl RebacApi for RebacApiImpl {
 
         debug!(resource_id = %req.resource_id, user_id = %claims.sub, "rebac: delete_resource");
 
-        let permissions = resolve_repo_permission(&self.state, &repo_id, &claims.sub).await?;
+        let permissions = resolve_repo_permission(&self.state, repo_id, claims.sub).await?;
         if !permissions.iter().any(|p| p == "admin") {
             return Err(Status::permission_denied("admin role required"));
         }
 
         // repo_permissions rows cascade on delete via the repositories FK.
-        sqlx::query("DELETE FROM repositories WHERE id = ?")
-            .bind(repo_id.to_string())
-            .execute(&self.state.db)
+        self.state
+            .storage
+            .delete_repository(repo_id)
             .await
-            .map_err(|e| Status::internal(e.to_string()))?;
+            .map_err(map_storage_err)?;
 
         Ok(Response::new(DeleteResourceResponse {}))
     }

@@ -20,30 +20,32 @@ pub async fn get_user(
     State(state): State<AppState>,
     Path(username): Path<String>,
 ) -> Result<Json<UserResponse>> {
-    let row: Option<(String, String)> =
-        sqlx::query_as("SELECT id, username FROM users WHERE username = ?")
-            .bind(&username)
-            .fetch_optional(&state.db)
-            .await
-            .map_err(|e: sqlx::Error| ApiError::Internal(e.into()))?;
+    let user = state
+        .storage
+        .get_user_by_username(&username)
+        .await?
+        .ok_or(ApiError::NotFound)?;
 
-    let (id_str, username) = row.ok_or(ApiError::NotFound)?;
-    let id = Uuid::parse_str(&id_str).map_err(|_| ApiError::Internal(anyhow::anyhow!("malformed id")))?;
-    Ok(Json(UserResponse { id, username, email: String::new() }))
+    Ok(Json(UserResponse {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+    }))
 }
 
 pub async fn get_me(
     State(state): State<AppState>,
     user: AuthenticatedUser,
 ) -> Result<Json<UserResponse>> {
-    let row: Option<(String, String, String)> =
-        sqlx::query_as("SELECT id, username, email FROM users WHERE id = ?")
-            .bind(user.user_id.to_string())
-            .fetch_optional(&state.db)
-            .await
-            .map_err(|e: sqlx::Error| ApiError::Internal(e.into()))?;
+    let user = state
+        .storage
+        .get_user_by_id(user.user_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
 
-    let (id_str, username, email) = row.ok_or(ApiError::NotFound)?;
-    let id = Uuid::parse_str(&id_str).map_err(|_| ApiError::Internal(anyhow::anyhow!("malformed id")))?;
-    Ok(Json(UserResponse { id, username, email }))
+    Ok(Json(UserResponse {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+    }))
 }

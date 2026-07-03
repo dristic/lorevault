@@ -1,8 +1,11 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use sqlx::AnyPool;
 use tracing::instrument;
 use uuid::Uuid;
+
+use lv_storage::Storage;
 
 use crate::{
     error::{AuthError, Result},
@@ -12,12 +15,12 @@ use crate::{
 };
 
 pub struct PasswordProvider {
-    db: AnyPool,
+    storage: Arc<dyn Storage>,
 }
 
 impl PasswordProvider {
-    pub fn new(db: AnyPool) -> Self {
-        Self { db }
+    pub fn new(storage: Arc<dyn Storage>) -> Self {
+        Self { storage }
     }
 
     #[instrument(skip(self, password_str), fields(username, email))]
@@ -37,45 +40,11 @@ impl PasswordProvider {
         let credential = serde_json::to_string(&json!({ "hash": hash }))
             .map_err(|e| AuthError::Internal(e.to_string()))?;
 
-        let mut tx: sqlx::Transaction<'_, sqlx::Any> = self
-            .db
-            .begin()
-            .await
-            .map_err(|e: sqlx::Error| AuthError::Internal(e.to_string()))?;
-
-        sqlx::query("INSERT INTO users (id, username, email) VALUES (?, ?, ?)")
-            .bind(user_id.to_string())
-            .bind(username)
-            .bind(email)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e: sqlx::Error| match e {
-                sqlx::Error::Database(ref d) if d.is_unique_violation() => {
-                    let msg = d.message();
-                    if msg.contains("username") {
-                        AuthError::Conflict("username already taken".into())
-                    } else {
-                        AuthError::Conflict("email already registered".into())
-                    }
-                }
-                e => AuthError::Internal(e.to_string()),
-            })?;
-
-        sqlx::query(
-            "INSERT INTO user_identities (id, user_id, provider, provider_uid, credential_json)
-             VALUES (?, ?, 'password', ?, ?)",
-        )
-        .bind(Uuid::new_v4().to_string())
-        .bind(user_id.to_string())
-        .bind(&provider_uid)
-        .bind(&credential)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e: sqlx::Error| AuthError::Internal(e.to_string()))?;
-
-        tx.commit()
-            .await
-            .map_err(|e: sqlx::Error| AuthError::Internal(e.to_string()))?;
+        let mut tx = self.storage.begin().await?;
+        tx.insert_user(user_id, username, email).await?;
+        tx.insert_user_identity(Uuid::new_v4(), user_id, "password", &provider_uid, &credential)
+            .await?;
+        tx.commit().await?;
 
         Ok(user_id)
     }
@@ -86,22 +55,11 @@ impl PasswordProvider {
         login: &str,
         password_str: &str,
     ) -> Result<Uuid> {
-        let row: Option<(String, String)> = sqlx::query_as::<_, (String, String)>(
-            r#"SELECT ui.user_id, ui.credential_json
-               FROM user_identities ui
-               JOIN users u ON u.id = ui.user_id
-               WHERE ui.provider = 'password'
-                 AND (u.username = ? OR ui.provider_uid = lower(?))"#,
-        )
-        .bind(login)
-        .bind(login)
-        .fetch_optional(&self.db)
-        .await
-        .map_err(|e: sqlx::Error| AuthError::Internal(e.to_string()))?;
-
-        let (user_id_str, cred_str) = row.ok_or(AuthError::InvalidCredentials)?;
-        let user_id = Uuid::parse_str(&user_id_str)
-            .map_err(|_| AuthError::Internal("malformed user_id in db".into()))?;
+        let (user, cred_str) = self
+            .storage
+            .get_user_identity_by_login("password", login)
+            .await?
+            .ok_or(AuthError::InvalidCredentials)?;
 
         let cred: Value = serde_json::from_str(&cred_str)
             .map_err(|_| AuthError::Internal("malformed credential record".into()))?;
@@ -112,7 +70,7 @@ impl PasswordProvider {
 
         password::verify(password_str, stored_hash)?;
 
-        Ok(user_id)
+        Ok(user.id)
     }
 }
 
