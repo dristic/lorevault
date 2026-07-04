@@ -1,8 +1,9 @@
 use axum::{
-    extract::FromRequestParts,
+    extract::{FromRequestParts, OptionalFromRequestParts},
     http::{request::Parts, StatusCode},
     Json,
 };
+use lv_core::models::User;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -19,6 +20,16 @@ use crate::state::AppState;
 /// Returns `401 Unauthorized` if the header is missing, malformed, or the token is expired.
 pub struct AuthenticatedUser {
     pub user_id: Uuid,
+    pub is_admin: bool,
+}
+
+impl From<User> for AuthenticatedUser {
+    fn from(value: User) -> Self {
+        AuthenticatedUser {
+            user_id: value.id,
+            is_admin: value.is_admin,
+        }
+    }
 }
 
 impl FromRequestParts<AppState> for AuthenticatedUser {
@@ -44,9 +55,60 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
             rejection(StatusCode::UNAUTHORIZED, msg)
         })?;
 
-        Ok(AuthenticatedUser {
-            user_id: claims.sub,
+        let user = state
+            .storage
+            .get_user_by_id(claims.sub)
+            .await
+            .map_err(|e| rejection(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?
+            .ok_or_else(|| rejection(StatusCode::UNAUTHORIZED, "user not found"))?;
+
+        Ok(user.into())
+    }
+}
+
+/// Extracts the authenticated user and requires `is_admin`.
+///
+/// Use as a route handler parameter to restrict a route to admins:
+/// ```ignore
+/// async fn my_handler(admin: AdminUser, ...) -> impl IntoResponse { ... }
+/// ```
+/// Returns `401 Unauthorized` under the same conditions as `AuthenticatedUser`,
+/// or `403 Forbidden` if the authenticated user is not an admin.
+pub struct AdminUser {
+    pub user_id: Uuid,
+}
+
+impl FromRequestParts<AppState> for AdminUser {
+    type Rejection = (StatusCode, Json<Value>);
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let user = AuthenticatedUser::from_request_parts(parts, state).await?;
+        if !user.is_admin {
+            return Err(rejection(StatusCode::FORBIDDEN, "admin privileges required"));
+        }
+        Ok(AdminUser {
+            user_id: user.user_id,
         })
+    }
+}
+
+/// Lets `Option<AdminUser>` be used as an extractor, e.g. to allow a route
+/// gated on some other condition (a config flag) to fall back to "not an
+/// admin" rather than rejecting outright when no/invalid credentials are given.
+impl OptionalFromRequestParts<AppState> for AdminUser {
+    type Rejection = (StatusCode, Json<Value>);
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Option<Self>, Self::Rejection> {
+        match <Self as FromRequestParts<AppState>>::from_request_parts(parts, state).await {
+            Ok(admin) => Ok(Some(admin)),
+            Err(_) => Ok(None),
+        }
     }
 }
 
@@ -59,8 +121,10 @@ fn bearer_token(parts: &Parts) -> Option<&str> {
 }
 
 fn rejection(status: StatusCode, message: &str) -> (StatusCode, Json<Value>) {
-    (
-        status,
-        Json(json!({ "error": message, "code": "unauthorized" })),
-    )
+    let code = if status == StatusCode::FORBIDDEN {
+        "forbidden"
+    } else {
+        "unauthorized"
+    };
+    (status, Json(json!({ "error": message, "code": code })))
 }

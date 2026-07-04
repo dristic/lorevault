@@ -4,6 +4,8 @@ CREATE TABLE users (
     id         TEXT PRIMARY KEY,
     username   TEXT NOT NULL UNIQUE,
     email      TEXT NOT NULL UNIQUE,
+    is_admin   INTEGER NOT NULL DEFAULT 0 CHECK (is_admin IN (0, 1)),
+    must_change_password INTEGER NOT NULL DEFAULT 0 CHECK (must_change_password IN (0, 1)),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 

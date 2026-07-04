@@ -1,3 +1,9 @@
+[admin]
+open_user_creation = false
+admin_user         = "admin"
+admin_email        = "admin@localhost"
+admin_password     = "lorevault"
+
 [server]
 bind       = "0.0.0.0:3000"
 grpc_bind  = "0.0.0.0:9001"

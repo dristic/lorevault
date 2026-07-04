@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::error::Result;
+use crate::error::{AuthError, Result};
 
 /// Common user information required when creating a new account.
 /// Provider-specific credentials (passwords, OAuth tokens, etc.) are passed
@@ -38,4 +38,24 @@ pub trait AuthProvider: Send + Sync + 'static {
 
     /// Verify the supplied credentials and return the authenticated user's ID.
     async fn authenticate(&self, credentials: Value) -> Result<Uuid>;
+
+    /// Self-service password change: verifies `current_password` before replacing it.
+    /// Providers that don't manage passwords (e.g. OAuth) should return `Err(AuthError::NotSupported)`.
+    async fn change_password(
+        &self,
+        user_id: Uuid,
+        current_password: &str,
+        new_password: &str,
+    ) -> Result<()> {
+        let _ = (user_id, current_password, new_password);
+        Err(AuthError::NotSupported)
+    }
+
+    /// Admin-driven reset: sets a new password without verifying the old one,
+    /// and flags the account so the user must change it again on next login.
+    /// Providers that don't manage passwords (e.g. OAuth) should return `Err(AuthError::NotSupported)`.
+    async fn reset_password(&self, user_id: Uuid, new_password: &str) -> Result<()> {
+        let _ = (user_id, new_password);
+        Err(AuthError::NotSupported)
+    }
 }

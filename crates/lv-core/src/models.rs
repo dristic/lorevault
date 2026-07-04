@@ -9,6 +9,8 @@ pub struct User {
     pub id: Uuid,
     pub username: String,
     pub email: String,
+    pub is_admin: bool,
+    pub must_change_password: bool,
     pub created_at: OffsetDateTime,
 }
 

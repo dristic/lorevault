@@ -90,5 +90,21 @@ pub trait StorageTx: Send {
         role: RepoRole,
     ) -> Result<()>;
 
+    /// Replaces the stored credential payload for a user's identity with the given provider.
+    async fn update_user_credential(
+        &mut self,
+        user_id: Uuid,
+        provider: &str,
+        credential_json: &str,
+    ) -> Result<()>;
+    /// Sets both admin flags to absolute values (not a delta) — callers that only
+    /// mean to change one flag must pass through the other's current value.
+    async fn set_admin_flags(
+        &mut self,
+        user_id: Uuid,
+        is_admin: bool,
+        must_change_password: bool,
+    ) -> Result<()>;
+
     async fn commit(&mut self) -> Result<()>;
 }

@@ -3,9 +3,22 @@ use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Settings {
+    pub admin: AdminConfig,
     pub server: ServerConfig,
     pub database: DatabaseConfig,
     pub auth: AuthConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AdminConfig {
+    /// If user creation is locked to only admins or open to anyone.
+    pub open_user_creation: bool,
+    /// Default admin account username.
+    pub admin_user: String,
+    /// Default admin account email.
+    pub admin_email: String,
+    /// Default admin password. Change using the admin CLI after initialization.
+    pub admin_password: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

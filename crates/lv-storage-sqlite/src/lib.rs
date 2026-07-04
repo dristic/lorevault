@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
 use sqlx::SqliteConnection;
 use time::OffsetDateTime;
+use uuid::fmt::Hyphenated;
 use uuid::Uuid;
 
 use lv_core::models::{AuthSession, Repository, RepoRole, User, Visibility};
@@ -65,17 +66,22 @@ fn map_sqlx_err(e: sqlx::Error) -> StorageError {
     StorageError::Backend(Box::new(e))
 }
 
-fn parse_uuid(s: &str) -> Result<Uuid> {
-    Uuid::parse_str(s).map_err(|e| StorageError::Backend(Box::new(e)))
-}
-
-fn row_to_user(id: String, username: String, email: String, created_at: OffsetDateTime) -> Result<User> {
-    Ok(User {
-        id: parse_uuid(&id)?,
+fn row_to_user(
+    id: Hyphenated,
+    username: String,
+    email: String,
+    is_admin: bool,
+    must_change_password: bool,
+    created_at: OffsetDateTime,
+) -> User {
+    User {
+        id: id.into_uuid(),
         username,
         email,
+        is_admin,
+        must_change_password,
         created_at,
-    })
+    }
 }
 
 pub struct SqliteStorage {
@@ -91,27 +97,31 @@ impl SqliteStorage {
 #[async_trait]
 impl Storage for SqliteStorage {
     async fn get_user_by_id(&self, id: Uuid) -> Result<Option<User>> {
-        let row: Option<(String, String, String, OffsetDateTime)> =
-            sqlx::query_as("SELECT id, username, email, created_at FROM users WHERE id = ?")
-                .bind(id.to_string())
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(map_sqlx_err)?;
+        let row: Option<(Hyphenated, String, String, bool, bool, OffsetDateTime)> = sqlx::query_as(
+            "SELECT id, username, email, is_admin, must_change_password, created_at FROM users WHERE id = ?",
+        )
+        .bind(id.hyphenated())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
 
-        row.map(|(id, username, email, created_at)| row_to_user(id, username, email, created_at))
-            .transpose()
+        Ok(row.map(|(id, username, email, is_admin, must_change_password, created_at)| {
+            row_to_user(id, username, email, is_admin, must_change_password, created_at)
+        }))
     }
 
     async fn get_user_by_username(&self, username: &str) -> Result<Option<User>> {
-        let row: Option<(String, String, String, OffsetDateTime)> =
-            sqlx::query_as("SELECT id, username, email, created_at FROM users WHERE username = ?")
-                .bind(username)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(map_sqlx_err)?;
+        let row: Option<(Hyphenated, String, String, bool, bool, OffsetDateTime)> = sqlx::query_as(
+            "SELECT id, username, email, is_admin, must_change_password, created_at FROM users WHERE username = ?",
+        )
+        .bind(username)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
 
-        row.map(|(id, username, email, created_at)| row_to_user(id, username, email, created_at))
-            .transpose()
+        Ok(row.map(|(id, username, email, is_admin, must_change_password, created_at)| {
+            row_to_user(id, username, email, is_admin, must_change_password, created_at)
+        }))
     }
 
     async fn get_user_identity_by_login(
@@ -119,8 +129,8 @@ impl Storage for SqliteStorage {
         provider: &str,
         login: &str,
     ) -> Result<Option<(User, String)>> {
-        let row: Option<(String, String, String, OffsetDateTime, String)> = sqlx::query_as(
-            r#"SELECT u.id, u.username, u.email, u.created_at, ui.credential_json
+        let row: Option<(Hyphenated, String, String, bool, bool, OffsetDateTime, String)> = sqlx::query_as(
+            r#"SELECT u.id, u.username, u.email, u.is_admin, u.must_change_password, u.created_at, ui.credential_json
                FROM user_identities ui
                JOIN users u ON u.id = ui.user_id
                WHERE ui.provider = ?
@@ -133,10 +143,12 @@ impl Storage for SqliteStorage {
         .await
         .map_err(map_sqlx_err)?;
 
-        row.map(|(id, username, email, created_at, credential_json)| {
-            Ok((row_to_user(id, username, email, created_at)?, credential_json))
-        })
-        .transpose()
+        Ok(row.map(|(id, username, email, is_admin, must_change_password, created_at, credential_json)| {
+            (
+                row_to_user(id, username, email, is_admin, must_change_password, created_at),
+                credential_json,
+            )
+        }))
     }
 
     async fn insert_api_token(
@@ -147,8 +159,8 @@ impl Storage for SqliteStorage {
         token_hash: &str,
     ) -> Result<()> {
         sqlx::query("INSERT INTO api_tokens (id, user_id, name, token_hash) VALUES (?, ?, ?, ?)")
-            .bind(id.to_string())
-            .bind(user_id.to_string())
+            .bind(id.hyphenated())
+            .bind(user_id.hyphenated())
             .bind(name)
             .bind(token_hash)
             .execute(&self.pool)
@@ -158,8 +170,8 @@ impl Storage for SqliteStorage {
     }
 
     async fn find_user_by_token_hash(&self, token_hash: &str) -> Result<Option<User>> {
-        let row: Option<(String, String, String, OffsetDateTime)> = sqlx::query_as(
-            r#"SELECT u.id, u.username, u.email, u.created_at
+        let row: Option<(Hyphenated, String, String, bool, bool, OffsetDateTime)> = sqlx::query_as(
+            r#"SELECT u.id, u.username, u.email, u.is_admin, u.must_change_password, u.created_at
                FROM api_tokens t
                JOIN users u ON u.id = t.user_id
                WHERE t.token_hash = ?"#,
@@ -169,8 +181,9 @@ impl Storage for SqliteStorage {
         .await
         .map_err(map_sqlx_err)?;
 
-        row.map(|(id, username, email, created_at)| row_to_user(id, username, email, created_at))
-            .transpose()
+        Ok(row.map(|(id, username, email, is_admin, must_change_password, created_at)| {
+            row_to_user(id, username, email, is_admin, must_change_password, created_at)
+        }))
     }
 
     async fn get_repository_by_owner_and_name(
@@ -178,7 +191,7 @@ impl Storage for SqliteStorage {
         owner_username: &str,
         repo_name: &str,
     ) -> Result<Option<Repository>> {
-        let row: Option<(String, String, String, Option<String>, Visibility, String, OffsetDateTime)> =
+        let row: Option<(Hyphenated, Hyphenated, String, Option<String>, Visibility, String, OffsetDateTime)> =
             sqlx::query_as(
                 r#"SELECT r.id, r.owner_id, r.name, r.description, r.visibility, r.default_branch, r.created_at
                    FROM repositories r
@@ -191,27 +204,24 @@ impl Storage for SqliteStorage {
             .await
             .map_err(map_sqlx_err)?;
 
-        row.map(
-            |(id, owner_id, name, description, visibility, default_branch, created_at)| {
-                Ok(Repository {
-                    id: parse_uuid(&id)?,
-                    owner_id: parse_uuid(&owner_id)?,
-                    name,
-                    description,
-                    visibility,
-                    default_branch,
-                    created_at,
-                })
+        Ok(row.map(
+            |(id, owner_id, name, description, visibility, default_branch, created_at)| Repository {
+                id: id.into_uuid(),
+                owner_id: owner_id.into_uuid(),
+                name,
+                description,
+                visibility,
+                default_branch,
+                created_at,
             },
-        )
-        .transpose()
+        ))
     }
 
     async fn get_repo_permission(&self, repo_id: Uuid, user_id: Uuid) -> Result<Option<RepoRole>> {
         let role: Option<RepoRole> =
             sqlx::query_scalar("SELECT role FROM repo_permissions WHERE repo_id = ? AND user_id = ?")
-                .bind(repo_id.to_string())
-                .bind(user_id.to_string())
+                .bind(repo_id.hyphenated())
+                .bind(user_id.hyphenated())
                 .fetch_optional(&self.pool)
                 .await
                 .map_err(map_sqlx_err)?;
@@ -220,7 +230,7 @@ impl Storage for SqliteStorage {
 
     async fn delete_repository(&self, id: Uuid) -> Result<()> {
         sqlx::query("DELETE FROM repositories WHERE id = ?")
-            .bind(id.to_string())
+            .bind(id.hyphenated())
             .execute(&self.pool)
             .await
             .map_err(map_sqlx_err)?;
@@ -240,7 +250,7 @@ impl Storage for SqliteStorage {
     async fn get_auth_session(&self, code: &str, now: OffsetDateTime) -> Result<Option<AuthSession>> {
         use lv_core::models::AuthSessionState;
 
-        let row: Option<(String, AuthSessionState, Option<String>, Option<String>, Option<String>, i64)> =
+        let row: Option<(String, AuthSessionState, Option<String>, Option<Hyphenated>, Option<String>, i64)> =
             sqlx::query_as(
                 "SELECT code, state, token, user_id, username, expires_at \
                  FROM auth_sessions WHERE code = ? AND expires_at > ?",
@@ -256,7 +266,7 @@ impl Storage for SqliteStorage {
                 code,
                 state,
                 token,
-                user_id: user_id.as_deref().map(parse_uuid).transpose()?,
+                user_id: user_id.map(Hyphenated::into_uuid),
                 username,
                 expires_at: OffsetDateTime::from_unix_timestamp(expires_at)
                     .map_err(|e| StorageError::Backend(Box::new(e)))?,
@@ -278,7 +288,7 @@ impl Storage for SqliteStorage {
              WHERE code = ?",
         )
         .bind(token)
-        .bind(user_id.to_string())
+        .bind(user_id.hyphenated())
         .bind(username)
         .bind(expires_at.unix_timestamp())
         .bind(code)
@@ -317,7 +327,7 @@ impl StorageTx for SqliteStorageTx {
     async fn insert_user(&mut self, id: Uuid, username: &str, email: &str) -> Result<()> {
         let conn = self.conn()?;
         sqlx::query("INSERT INTO users (id, username, email) VALUES (?, ?, ?)")
-            .bind(id.to_string())
+            .bind(id.hyphenated())
             .bind(username)
             .bind(email)
             .execute(conn)
@@ -339,8 +349,8 @@ impl StorageTx for SqliteStorageTx {
             "INSERT INTO user_identities (id, user_id, provider, provider_uid, credential_json) \
              VALUES (?, ?, ?, ?, ?)",
         )
-        .bind(id.to_string())
-        .bind(user_id.to_string())
+        .bind(id.hyphenated())
+        .bind(user_id.hyphenated())
         .bind(provider)
         .bind(provider_uid)
         .bind(credential_json)
@@ -362,8 +372,8 @@ impl StorageTx for SqliteStorageTx {
             "INSERT INTO repositories (id, owner_id, name, visibility, default_branch) \
              VALUES (?, ?, ?, ?, 'main')",
         )
-        .bind(id.to_string())
-        .bind(owner_id.to_string())
+        .bind(id.hyphenated())
+        .bind(owner_id.hyphenated())
         .bind(name)
         .bind(visibility)
         .execute(conn)
@@ -375,9 +385,43 @@ impl StorageTx for SqliteStorageTx {
     async fn insert_repo_permission(&mut self, repo_id: Uuid, user_id: Uuid, role: RepoRole) -> Result<()> {
         let conn = self.conn()?;
         sqlx::query("INSERT INTO repo_permissions (repo_id, user_id, role) VALUES (?, ?, ?)")
-            .bind(repo_id.to_string())
-            .bind(user_id.to_string())
+            .bind(repo_id.hyphenated())
+            .bind(user_id.hyphenated())
             .bind(role)
+            .execute(conn)
+            .await
+            .map_err(map_sqlx_err)?;
+        Ok(())
+    }
+
+    async fn update_user_credential(
+        &mut self,
+        user_id: Uuid,
+        provider: &str,
+        credential_json: &str,
+    ) -> Result<()> {
+        let conn = self.conn()?;
+        sqlx::query("UPDATE user_identities SET credential_json = ? WHERE user_id = ? AND provider = ?")
+            .bind(credential_json)
+            .bind(user_id.hyphenated())
+            .bind(provider)
+            .execute(conn)
+            .await
+            .map_err(map_sqlx_err)?;
+        Ok(())
+    }
+
+    async fn set_admin_flags(
+        &mut self,
+        user_id: Uuid,
+        is_admin: bool,
+        must_change_password: bool,
+    ) -> Result<()> {
+        let conn = self.conn()?;
+        sqlx::query("UPDATE users SET is_admin = ?, must_change_password = ? WHERE id = ?")
+            .bind(is_admin)
+            .bind(must_change_password)
+            .bind(user_id.hyphenated())
             .execute(conn)
             .await
             .map_err(map_sqlx_err)?;

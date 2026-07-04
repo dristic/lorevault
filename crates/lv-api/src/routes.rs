@@ -21,6 +21,8 @@ pub fn router(state: AppState) -> Router {
         // Auth API
         .route("/api/v1/auth/register", post(auth::register))
         .route("/api/v1/auth/login", post(auth::login))
+        .route("/api/v1/auth/password", post(auth::change_password))
+        .route("/api/v1/auth/password/reset", post(auth::reset_password))
         .route("/api/v1/auth/tokens", post(auth::create_token))
         // Users
         .route("/api/v1/users/{username}", get(users::get_user))

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use axum::{
     extract::{Query, State},
+    http::StatusCode,
     response::Html,
     Form, Json,
 };
@@ -14,7 +15,7 @@ use lv_auth::{jwt, provider::NewUser, token as api_token};
 
 use crate::{
     error::{ApiError, Result},
-    extractors::AuthenticatedUser,
+    extractors::{AdminUser, AuthenticatedUser},
     state::AppState,
 };
 
@@ -31,12 +32,18 @@ pub struct RegisterRequest {
 pub struct AuthResponse {
     pub token: String,
     pub user_id: Uuid,
+    pub must_change_password: bool,
 }
 
 pub async fn register(
     State(state): State<AppState>,
+    admin: Option<AdminUser>,
     Json(req): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>> {
+    if !state.config.admin.open_user_creation && admin.is_none() {
+        return Err(ApiError::Forbidden);
+    }
+
     let user_id = state
         .auth
         .register(
@@ -50,7 +57,62 @@ pub async fn register(
         .map_err(ApiError::from)?;
 
     let token = issue_jwt(&state, user_id, &req.username)?;
-    Ok(Json(AuthResponse { token, user_id }))
+    Ok(Json(AuthResponse {
+        token,
+        user_id,
+        must_change_password: false,
+    }))
+}
+
+// ── Change Password ───────────────────────────────────────────────────────────
+
+/// Self-service: the caller changes their own password, proving they know the current one.
+#[derive(Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+pub async fn change_password(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<ChangePasswordRequest>,
+) -> Result<StatusCode> {
+    state
+        .auth
+        .change_password(user.user_id, &req.current_password, &req.new_password)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Admin-driven: resets another user's password without knowing the current one.
+/// Forces `must_change_password` on the target account.
+#[derive(Deserialize)]
+pub struct ResetPasswordRequest {
+    pub username: String,
+    pub new_password: String,
+}
+
+pub async fn reset_password(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+    Json(req): Json<ResetPasswordRequest>,
+) -> Result<StatusCode> {
+    let target = state
+        .storage
+        .get_user_by_username(&req.username)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+
+    state
+        .auth
+        .reset_password(target.id, &req.new_password)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ── Login ─────────────────────────────────────────────────────────────────────
@@ -72,15 +134,18 @@ pub async fn login(
         .await
         .map_err(ApiError::from)?;
 
-    let username = state
+    let user = state
         .storage
         .get_user_by_id(user_id)
         .await?
-        .ok_or_else(|| ApiError::Internal(anyhow::anyhow!("authenticated user not found")))?
-        .username;
+        .ok_or_else(|| ApiError::Internal(anyhow::anyhow!("authenticated user not found")))?;
 
-    let token = issue_jwt(&state, user_id, &username)?;
-    Ok(Json(AuthResponse { token, user_id }))
+    let token = issue_jwt(&state, user_id, &user.username)?;
+    Ok(Json(AuthResponse {
+        token,
+        user_id,
+        must_change_password: user.must_change_password,
+    }))
 }
 
 // ── API tokens ────────────────────────────────────────────────────────────────

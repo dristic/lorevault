@@ -23,11 +23,22 @@ async fn main() -> anyhow::Result<()> {
     sqlx::migrate!("../../migrations").run(&pool).await?;
     let storage: Arc<dyn Storage> = Arc::new(lv_storage_sqlite::SqliteStorage::new(pool));
 
-    let auth = Arc::new(PasswordProvider::new(storage.clone()));
+    let password_provider = PasswordProvider::new(storage.clone());
+    password_provider
+        .ensure_default_admin(
+            &cfg.admin.admin_user,
+            &cfg.admin.admin_email,
+            &cfg.admin.admin_password,
+        )
+        .await?;
+    let auth = Arc::new(password_provider);
 
     // Load JWT config — audience is the gRPC hostname so Lore's domain check passes.
     let private_pem = std::fs::read(&cfg.auth.jwt_private_key_pem)?;
-    let grpc_hostname = Url::parse(&cfg.server.public_url)?.host_str().unwrap_or_default().to_string();
+    let grpc_hostname = Url::parse(&cfg.server.public_url)?
+        .host_str()
+        .unwrap_or_default()
+        .to_string();
     let mut audience = vec![grpc_hostname];
     audience.extend(cfg.auth.jwt_extra_audience.clone());
     let jwt = Arc::new(JwtConfig::from_rsa_pem(
