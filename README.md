@@ -8,13 +8,16 @@ A self-hostable storage and authentication service for [Lore](https://github.com
 
 ## Getting Started
 
-The easiest way to get started is to build the docker container and run it locally:
+The easiest way to try LoreVault is to pull the published container and run it locally:
 
 ```bash
-docker build -t lorevault:v1 .
+docker pull ghcr.io/dristic/lorevault:latest
+docker run -p 3000:3000 -p 9001:9001 -v lorevault-data:/app/data ghcr.io/dristic/lorevault:latest
 ```
 
-This will build the project in a container with the rust toolchain then build a lightweight app container to run the project.
+The REST API will be available at `http://localhost:3000` and the gRPC gateway at `localhost:9001`. The `-v` flag persists the SQLite database in a named volume across container restarts.
+
+A bootstrap admin user is created on first run (`admin` / `lorevault` by default — override via `config/local.toml` or `LV__ADMIN__*` env vars).
 
 ---
 

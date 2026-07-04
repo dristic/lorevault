@@ -1,7 +1,7 @@
 [admin]
 open_user_creation = false
 admin_user         = "admin"
-admin_email        = "admin@localhost"
+admin_email        = "admin@example.com"
 admin_password     = "lorevault"
 
 [server]
