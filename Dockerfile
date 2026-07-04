@@ -43,6 +43,6 @@ COPY --from=builder /app/target/release/lorevault /usr/local/bin/lorevault
 # Config directory must be present; secrets come from env vars at runtime
 COPY config /app/config
 
-EXPOSE 3000 41337
+EXPOSE 3000 9001
 
 CMD ["lorevault"]
