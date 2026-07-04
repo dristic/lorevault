@@ -1,5 +1,5 @@
 # ── Build stage ──────────────────────────────────────────────────────────────
-FROM rust:1.80-bookworm AS builder
+FROM rust:1.88-bookworm AS builder
 
 RUN apt-get update && apt-get install -y protobuf-compiler && rm -rf /var/lib/apt/lists/*
 
@@ -10,12 +10,12 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates/lv-core/Cargo.toml   crates/lv-core/
 COPY crates/lv-auth/Cargo.toml   crates/lv-auth/
 COPY crates/lv-storage/Cargo.toml crates/lv-storage/
+COPY crates/lv-storage-sqlite/Cargo.toml crates/lv-storage-sqlite/
 COPY crates/lv-gateway/Cargo.toml crates/lv-gateway/
 COPY crates/lv-api/Cargo.toml    crates/lv-api/
-COPY crates/lv-worker/Cargo.toml  crates/lv-worker/
 
 # Stub all lib/main targets so cargo can fetch and build deps
-RUN for crate in lv-core lv-auth lv-storage lv-gateway lv-worker; do \
+RUN for crate in lv-core lv-auth lv-storage lv-storage-sqlite lv-gateway; do \
       mkdir -p crates/$crate/src && printf 'pub fn _stub() {}' > crates/$crate/src/lib.rs; \
     done && \
     mkdir -p crates/lv-api/src && printf 'fn main() {}' > crates/lv-api/src/main.rs
@@ -30,7 +30,7 @@ COPY proto              proto
 COPY crates             crates
 COPY migrations         migrations
 
-RUN touch crates/*/src/*.rs crates/*/src/**/*.rs 2>/dev/null || true && \
+RUN find crates proto -type f \( -name '*.rs' -o -name '*.proto' \) -exec touch {} + && \
     cargo build --release -p lv-api
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/
 WORKDIR /app
 COPY --from=builder /app/target/release/lorevault /usr/local/bin/lorevault
 # Config directory must be present; secrets come from env vars at runtime
-COPY --from=builder /app/config /app/config
+COPY config /app/config
 
 EXPOSE 3000 41337
 
