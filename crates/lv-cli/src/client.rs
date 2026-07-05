@@ -1,5 +1,6 @@
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
+use tracing::debug;
 
 use crate::error::{CliError, Result};
 
@@ -34,20 +35,27 @@ impl ApiClient {
     }
 
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
-        let req = self.auth(self.http.get(self.url(path)))?;
+        let url = self.url(path);
+        debug!(method = "GET", %url, "sending request");
+        let req = self.auth(self.http.get(&url))?;
         Self::handle(req.send().await?).await
     }
 
     pub async fn post<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T> {
-        let req = self.auth(self.http.post(self.url(path)).json(body))?;
+        let url = self.url(path);
+        debug!(method = "POST", %url, "sending request");
+        let req = self.auth(self.http.post(&url).json(body))?;
         Self::handle(req.send().await?).await
     }
 
     /// For endpoints that return `204 No Content` on success (e.g. password
     /// reset, admin-flag changes) rather than a JSON body.
     pub async fn post_no_content<B: Serialize>(&self, path: &str, body: &B) -> Result<()> {
-        let req = self.auth(self.http.post(self.url(path)).json(body))?;
+        let url = self.url(path);
+        debug!(method = "POST", %url, "sending request");
+        let req = self.auth(self.http.post(&url).json(body))?;
         let resp = req.send().await?;
+        debug!(status = %resp.status(), "received response");
         if resp.status().is_success() {
             return Ok(());
         }
@@ -57,7 +65,9 @@ impl ApiClient {
     /// `POST` without auth (login, register-when-open) — caller supplies the
     /// body and gets the raw JSON response back.
     pub async fn post_public<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T> {
-        let resp = self.http.post(self.url(path)).json(body).send().await?;
+        let url = self.url(path);
+        debug!(method = "POST", %url, "sending request");
+        let resp = self.http.post(&url).json(body).send().await?;
         Self::handle(resp).await
     }
 
@@ -65,13 +75,17 @@ impl ApiClient {
     /// regardless of success — for endpoints like `/healthz` that use a
     /// non-2xx status as a meaningful result rather than an error envelope.
     pub async fn get_public_raw(&self, path: &str) -> Result<(u16, Value)> {
-        let resp = self.http.get(self.url(path)).send().await?;
+        let url = self.url(path);
+        debug!(method = "GET", %url, "sending request");
+        let resp = self.http.get(&url).send().await?;
         let status = resp.status().as_u16();
+        debug!(status, "received response");
         let body = resp.json::<Value>().await.unwrap_or(Value::Null);
         Ok((status, body))
     }
 
     async fn handle<T: DeserializeOwned>(resp: reqwest::Response) -> Result<T> {
+        debug!(status = %resp.status(), "received response");
         if resp.status().is_success() {
             return Ok(resp.json().await?);
         }

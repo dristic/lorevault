@@ -1359,6 +1359,8 @@ dependencies = [
  "time",
  "tokio",
  "toml",
+ "tracing",
+ "tracing-subscriber",
  "uuid",
 ]
 

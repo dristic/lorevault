@@ -4,6 +4,7 @@ mod config;
 mod error;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use tracing_subscriber::EnvFilter;
 
 use client::ApiClient;
 use config::CliConfig;
@@ -11,6 +12,10 @@ use config::CliConfig;
 #[derive(Parser)]
 #[command(name = "lorevault", version, about = "LoreVault CLI — manage users, repos, and your own account")]
 struct Cli {
+    /// Print debug logs (request/response details, etc.) to stdout.
+    #[arg(short = 'd', long, global = true)]
+    debug: bool,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -100,6 +105,13 @@ enum AdminReposCommand {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+
+    let filter = if cli.debug { "debug" } else { "off" };
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::new(filter))
+        .with_target(false)
+        .without_time()
+        .init();
 
     match cli.command {
         Command::Login { server, user, password } => commands::login::run(server, user, password).await,
