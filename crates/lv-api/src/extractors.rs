@@ -66,6 +66,24 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
     }
 }
 
+/// Lets `Option<AuthenticatedUser>` be used as an extractor, e.g. for routes that
+/// serve both anonymous and authenticated callers different results (public vs.
+/// private repo visibility) rather than rejecting outright when no/invalid
+/// credentials are given.
+impl OptionalFromRequestParts<AppState> for AuthenticatedUser {
+    type Rejection = (StatusCode, Json<Value>);
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Option<Self>, Self::Rejection> {
+        match <Self as FromRequestParts<AppState>>::from_request_parts(parts, state).await {
+            Ok(user) => Ok(Some(user)),
+            Err(_) => Ok(None),
+        }
+    }
+}
+
 /// Extracts the authenticated user and requires `is_admin`.
 ///
 /// Use as a route handler parameter to restrict a route to admins:
@@ -85,7 +103,7 @@ impl FromRequestParts<AppState> for AdminUser {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let user = AuthenticatedUser::from_request_parts(parts, state).await?;
+        let user = <AuthenticatedUser as FromRequestParts<AppState>>::from_request_parts(parts, state).await?;
         if !user.is_admin {
             return Err(rejection(StatusCode::FORBIDDEN, "admin privileges required"));
         }

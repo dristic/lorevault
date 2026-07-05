@@ -6,11 +6,15 @@ use axum::{
     response::Html,
     Form, Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
+use lv_api_types::auth::{
+    AuthResponse, ChangePasswordRequest, CreateTokenRequest, CreateTokenResponse, LoginRequest, RegisterRequest,
+    ResetPasswordRequest,
+};
 use lv_auth::{jwt, provider::NewUser, token as api_token};
 
 use crate::{
@@ -20,20 +24,6 @@ use crate::{
 };
 
 // ── Register ──────────────────────────────────────────────────────────────────
-
-#[derive(Deserialize)]
-pub struct RegisterRequest {
-    pub username: String,
-    pub email: String,
-    pub password: String,
-}
-
-#[derive(Serialize)]
-pub struct AuthResponse {
-    pub token: String,
-    pub user_id: Uuid,
-    pub must_change_password: bool,
-}
 
 pub async fn register(
     State(state): State<AppState>,
@@ -66,13 +56,6 @@ pub async fn register(
 
 // ── Change Password ───────────────────────────────────────────────────────────
 
-/// Self-service: the caller changes their own password, proving they know the current one.
-#[derive(Deserialize)]
-pub struct ChangePasswordRequest {
-    pub current_password: String,
-    pub new_password: String,
-}
-
 pub async fn change_password(
     State(state): State<AppState>,
     user: AuthenticatedUser,
@@ -85,14 +68,6 @@ pub async fn change_password(
         .map_err(ApiError::from)?;
 
     Ok(StatusCode::NO_CONTENT)
-}
-
-/// Admin-driven: resets another user's password without knowing the current one.
-/// Forces `must_change_password` on the target account.
-#[derive(Deserialize)]
-pub struct ResetPasswordRequest {
-    pub username: String,
-    pub new_password: String,
 }
 
 pub async fn reset_password(
@@ -116,13 +91,6 @@ pub async fn reset_password(
 }
 
 // ── Login ─────────────────────────────────────────────────────────────────────
-
-#[derive(Deserialize)]
-pub struct LoginRequest {
-    /// Username or email address.
-    pub login: String,
-    pub password: String,
-}
 
 pub async fn login(
     State(state): State<AppState>,
@@ -149,18 +117,6 @@ pub async fn login(
 }
 
 // ── API tokens ────────────────────────────────────────────────────────────────
-
-#[derive(Deserialize)]
-pub struct CreateTokenRequest {
-    pub name: String,
-}
-
-#[derive(Serialize)]
-pub struct CreateTokenResponse {
-    /// Shown once — the caller must store this; it cannot be retrieved again.
-    pub token: String,
-    pub name: String,
-}
 
 pub async fn create_token(
     State(state): State<AppState>,

@@ -1,0 +1,13 @@
+[package]
+name = "lv-api-types"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+time = { workspace = true }
+uuid = { workspace = true }

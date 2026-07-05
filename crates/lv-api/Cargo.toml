@@ -12,11 +12,12 @@ name = "lv_api"
 path = "src/lib.rs"
 
 [[bin]]
-name = "lorevault"
+name = "lorevault-server"
 path = "src/main.rs"
 
 [dependencies]
 lv-core = { path = "../lv-core" }
+lv-api-types = { path = "../lv-api-types" }
 lv-auth = { path = "../lv-auth" }
 lv-storage = { path = "../lv-storage" }
 lv-storage-sqlite = { path = "../lv-storage-sqlite" }

@@ -2,22 +2,15 @@ use axum::{
     extract::{Path, State},
     Json,
 };
-use serde::Serialize;
-use uuid::Uuid;
+
+use lv_api_types::users::{RepoSummary, TokenSummary, UserResponse};
 
 use crate::{
+    dto::visibility_to_wire,
     error::{ApiError, Result},
     extractors::{AdminUser, AuthenticatedUser},
     state::AppState,
 };
-
-#[derive(Serialize)]
-pub struct UserResponse {
-    pub id: Uuid,
-    pub username: String,
-    pub email: String,
-    pub is_admin: bool,
-}
 
 pub async fn get_user(
     State(state): State<AppState>,
@@ -36,6 +29,46 @@ pub async fn get_user(
         email: user.email,
         is_admin: user.is_admin,
     }))
+}
+
+pub async fn list_my_repos(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+) -> Result<Json<Vec<RepoSummary>>> {
+    let repos = state.storage.list_repositories_by_owner(user.user_id).await?;
+
+    Ok(Json(
+        repos
+            .into_iter()
+            .map(|r| RepoSummary {
+                id: r.id,
+                name: r.name,
+                description: r.description,
+                visibility: visibility_to_wire(r.visibility),
+                default_branch: r.default_branch,
+            })
+            .collect(),
+    ))
+}
+
+pub async fn list_my_tokens(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+) -> Result<Json<Vec<TokenSummary>>> {
+    let tokens = state.storage.list_api_tokens(user.user_id).await?;
+
+    Ok(Json(
+        tokens
+            .into_iter()
+            .map(|t| TokenSummary {
+                id: t.id,
+                name: t.name,
+                created_at: t.created_at,
+                last_used: t.last_used,
+                expires_at: t.expires_at,
+            })
+            .collect(),
+    ))
 }
 
 pub async fn get_me(

@@ -5,6 +5,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 use crate::state::AppState;
 
+pub mod admin;
 pub mod auth;
 pub mod health;
 pub mod repos;
@@ -27,8 +28,14 @@ pub fn router(state: AppState) -> Router {
         // Users
         .route("/api/v1/users/{username}", get(users::get_user))
         .route("/api/v1/users/me", get(users::get_me))
+        .route("/api/v1/users/me/repos", get(users::list_my_repos))
+        .route("/api/v1/users/me/tokens", get(users::list_my_tokens))
         // Repos
         .route("/api/v1/repos/{owner}/{repo}", get(repos::get_repo))
+        // Admin
+        .route("/api/v1/admin/users", get(admin::list_users))
+        .route("/api/v1/admin/users/{username}/admin", post(admin::set_admin))
+        .route("/api/v1/admin/repos", get(admin::list_repos))
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
         .with_state(state)
