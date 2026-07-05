@@ -1,3 +1,5 @@
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -9,6 +11,15 @@ use uuid::Uuid;
 pub enum Visibility {
     Public,
     Private,
+}
+
+impl fmt::Display for Visibility {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Visibility::Public => write!(f, "public"),
+            Visibility::Private => write!(f, "private"),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
