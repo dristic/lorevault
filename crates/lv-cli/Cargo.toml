@@ -1,0 +1,28 @@
+[package]
+name = "lv-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "lorevault"
+path = "src/main.rs"
+
+[dependencies]
+lv-api-types = { path = "../lv-api-types" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+time = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+toml = "0.8"
+dirs = "5"
+rpassword = "7"
+tabwriter = "1"
