@@ -62,6 +62,20 @@ impl ApiClient {
         Err(Self::api_error(resp).await)
     }
 
+    /// `DELETE` returning `204 No Content` on success (e.g. revoking a repo
+    /// permission).
+    pub async fn delete_no_content(&self, path: &str) -> Result<()> {
+        let url = self.url(path);
+        debug!(method = "DELETE", %url, "sending request");
+        let req = self.auth(self.http.delete(&url))?;
+        let resp = req.send().await?;
+        debug!(status = %resp.status(), "received response");
+        if resp.status().is_success() {
+            return Ok(());
+        }
+        Err(Self::api_error(resp).await)
+    }
+
     /// `POST` without auth (login, register-when-open) — caller supplies the
     /// body and gets the raw JSON response back.
     pub async fn post_public<B: Serialize, T: DeserializeOwned>(

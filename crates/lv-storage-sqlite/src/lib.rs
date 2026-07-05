@@ -431,6 +431,35 @@ impl Storage for SqliteStorage {
         Ok(role)
     }
 
+    async fn set_repo_permission(
+        &self,
+        repo_id: Uuid,
+        user_id: Uuid,
+        role: RepoRole,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO repo_permissions (repo_id, user_id, role) VALUES (?, ?, ?) \
+             ON CONFLICT (repo_id, user_id) DO UPDATE SET role = excluded.role",
+        )
+        .bind(repo_id.hyphenated())
+        .bind(user_id.hyphenated())
+        .bind(role)
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+        Ok(())
+    }
+
+    async fn remove_repo_permission(&self, repo_id: Uuid, user_id: Uuid) -> Result<()> {
+        sqlx::query("DELETE FROM repo_permissions WHERE repo_id = ? AND user_id = ?")
+            .bind(repo_id.hyphenated())
+            .bind(user_id.hyphenated())
+            .execute(&self.pool)
+            .await
+            .map_err(map_sqlx_err)?;
+        Ok(())
+    }
+
     async fn delete_repository(&self, id: Uuid) -> Result<()> {
         sqlx::query("DELETE FROM repositories WHERE id = ?")
             .bind(id.hyphenated())

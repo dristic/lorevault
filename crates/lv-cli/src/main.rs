@@ -49,7 +49,10 @@ enum Command {
     /// Change your own password.
     Passwd,
     /// Repositories you own.
-    Repos,
+    Repos {
+        #[command(subcommand)]
+        command: ReposCommand,
+    },
     /// Manage your own API tokens.
     Tokens {
         #[command(subcommand)]
@@ -60,6 +63,43 @@ enum Command {
         #[command(subcommand)]
         command: AdminCommand,
     },
+}
+
+#[derive(Subcommand)]
+enum ReposCommand {
+    /// List repositories you own.
+    List,
+    /// Grant a user access to a repository, or change their existing role.
+    AddUser {
+        /// Repository in `owner/name` form.
+        repo: String,
+        username: String,
+        #[arg(long, value_enum)]
+        role: RepoRoleArg,
+    },
+    /// Revoke a user's access to a repository.
+    RemoveUser {
+        /// Repository in `owner/name` form.
+        repo: String,
+        username: String,
+    },
+}
+
+#[derive(Clone, ValueEnum)]
+enum RepoRoleArg {
+    Read,
+    Write,
+    Admin,
+}
+
+impl From<RepoRoleArg> for lv_api_types::repos::RepoRole {
+    fn from(r: RepoRoleArg) -> Self {
+        match r {
+            RepoRoleArg::Read => Self::Read,
+            RepoRoleArg::Write => Self::Write,
+            RepoRoleArg::Admin => Self::Admin,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -88,6 +128,15 @@ enum AdminCommand {
 enum AdminUsersCommand {
     /// List every user on the instance.
     List,
+    /// Create a new user account.
+    Create {
+        username: String,
+        email: String,
+        /// Omit to be prompted (hidden input) instead of passing it on the
+        /// command line, which would leak it into shell history.
+        #[arg(long)]
+        password: Option<String>,
+    },
     /// Grant or revoke admin privileges for a user.
     SetAdmin {
         username: String,
@@ -133,7 +182,20 @@ async fn main() -> anyhow::Result<()> {
         Command::Health { server } => commands::health::run(server).await,
         Command::Whoami => commands::whoami::run(&build_client()?).await,
         Command::Passwd => commands::passwd::run(&build_client()?).await,
-        Command::Repos => commands::repos::list(&build_client()?).await,
+        Command::Repos { command } => {
+            let client = build_client()?;
+            match command {
+                ReposCommand::List => commands::repos::list(&client).await,
+                ReposCommand::AddUser {
+                    repo,
+                    username,
+                    role,
+                } => commands::repos::add_user(&client, repo, username, role.into()).await,
+                ReposCommand::RemoveUser { repo, username } => {
+                    commands::repos::remove_user(&client, repo, username).await
+                }
+            }
+        }
         Command::Tokens { command } => {
             let client = build_client()?;
             match command {
@@ -146,6 +208,11 @@ async fn main() -> anyhow::Result<()> {
             match command {
                 AdminCommand::Users { command } => match command {
                     AdminUsersCommand::List => commands::admin::users::list(&client).await,
+                    AdminUsersCommand::Create {
+                        username,
+                        email,
+                        password,
+                    } => commands::admin::users::create(&client, username, email, password).await,
                     AdminUsersCommand::SetAdmin { username, action } => {
                         commands::admin::users::set_admin(
                             &client,

@@ -36,6 +36,10 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/users/me/tokens", get(users::list_my_tokens))
         // Repos
         .route("/api/v1/repos/{owner}/{repo}", get(repos::get_repo))
+        .route(
+            "/api/v1/repos/{owner}/{repo}/users/{username}",
+            post(repos::add_repo_user).delete(repos::remove_repo_user),
+        )
         // Admin
         .route("/api/v1/admin/users", get(admin::list_users))
         .route(

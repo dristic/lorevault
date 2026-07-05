@@ -1,6 +1,7 @@
 use std::io::Write;
 
 use lv_api_types::admin::AdminUserSummary;
+use lv_api_types::auth::{AuthResponse, RegisterRequest};
 use tabwriter::TabWriter;
 
 use crate::client::ApiClient;
@@ -26,6 +27,36 @@ pub async fn list(client: &ApiClient) -> anyhow::Result<()> {
     }
 
     tw.flush()?;
+
+    Ok(())
+}
+
+/// Creates a new user account. Requires the caller to be an admin (the
+/// server also allows this when `open_user_creation` is set, but the CLI has
+/// no unauthenticated path to it — that's for self-service signup UIs).
+pub async fn create(
+    client: &ApiClient,
+    username: String,
+    email: String,
+    password: Option<String>,
+) -> anyhow::Result<()> {
+    let password = match password {
+        Some(password) => password,
+        None => rpassword::prompt_password("Password: ")?,
+    };
+
+    let resp: AuthResponse = client
+        .post(
+            "/api/v1/auth/register",
+            &RegisterRequest {
+                username: username.clone(),
+                email,
+                password,
+            },
+        )
+        .await?;
+
+    println!("Created user {username} ({}).", resp.user_id);
 
     Ok(())
 }

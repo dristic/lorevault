@@ -40,6 +40,12 @@ pub trait Storage: Send + Sync + 'static {
         repo_name: &str,
     ) -> Result<Option<Repository>>;
     async fn get_repo_permission(&self, repo_id: Uuid, user_id: Uuid) -> Result<Option<RepoRole>>;
+    /// Grants `role` to `user_id` on `repo_id`, or changes it if the user
+    /// already has a permission row for that repo.
+    async fn set_repo_permission(&self, repo_id: Uuid, user_id: Uuid, role: RepoRole)
+        -> Result<()>;
+    /// Revokes `user_id`'s access to `repo_id`. A no-op if they had none.
+    async fn remove_repo_permission(&self, repo_id: Uuid, user_id: Uuid) -> Result<()>;
     /// Deletes the repository row; `repo_permissions` cascades via FK.
     async fn delete_repository(&self, id: Uuid) -> Result<()>;
     async fn list_repositories_by_owner(&self, owner_id: Uuid) -> Result<Vec<Repository>>;
