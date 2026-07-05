@@ -17,3 +17,12 @@ install-path = "CARGO_HOME"
 hosting = "github"
 # Whether to install an updater program
 install-updater = false
+
+[dist.dependencies.apt]
+protobuf-compiler = '*'
+
+[dist.dependencies.homebrew]
+protobuf = '*'
+
+[dist.dependencies.chocolatey]
+protoc = '*'
