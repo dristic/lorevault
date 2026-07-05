@@ -89,11 +89,7 @@ impl JwtConfig {
     }
 }
 
-pub fn encode(
-    config: &JwtConfig,
-    user_id: Uuid,
-    username: &str,
-) -> Result<String> {
+pub fn encode(config: &JwtConfig, user_id: Uuid, username: &str) -> Result<String> {
     let now = OffsetDateTime::now_utc().unix_timestamp();
     let claims = Claims {
         iss: config.issuer.clone(),

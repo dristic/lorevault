@@ -12,7 +12,10 @@ pub async fn run(server: String, user: String, password: Option<String>) -> anyh
     let resp: AuthResponse = client
         .post_public(
             "/api/v1/auth/login",
-            &LoginRequest { login: user.clone(), password },
+            &LoginRequest {
+                login: user.clone(),
+                password,
+            },
         )
         .await?;
 

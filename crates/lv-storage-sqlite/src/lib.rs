@@ -7,7 +7,7 @@ use time::OffsetDateTime;
 use uuid::fmt::Hyphenated;
 use uuid::Uuid;
 
-use lv_core::models::{ApiTokenSummary, AuthSession, Repository, RepoRole, User, Visibility};
+use lv_core::models::{ApiTokenSummary, AuthSession, RepoRole, Repository, User, Visibility};
 use lv_storage::{Result, Storage, StorageError, StorageTx};
 
 /// Opens (creating if missing) the SQLite database at `url` and configures it
@@ -21,7 +21,9 @@ pub async fn connect(url: &str) -> sqlx::Result<SqlitePool> {
     }
 
     let pool = SqlitePool::connect_with(opts).await?;
-    sqlx::query("PRAGMA journal_mode=WAL").execute(&pool).await?;
+    sqlx::query("PRAGMA journal_mode=WAL")
+        .execute(&pool)
+        .await?;
     sqlx::query("PRAGMA foreign_keys=ON").execute(&pool).await?;
 
     Ok(pool)
@@ -126,9 +128,18 @@ impl Storage for SqliteStorage {
         .await
         .map_err(map_sqlx_err)?;
 
-        Ok(row.map(|(id, username, email, is_admin, must_change_password, created_at)| {
-            row_to_user(id, username, email, is_admin, must_change_password, created_at)
-        }))
+        Ok(row.map(
+            |(id, username, email, is_admin, must_change_password, created_at)| {
+                row_to_user(
+                    id,
+                    username,
+                    email,
+                    is_admin,
+                    must_change_password,
+                    created_at,
+                )
+            },
+        ))
     }
 
     async fn get_user_by_username(&self, username: &str) -> Result<Option<User>> {
@@ -140,9 +151,18 @@ impl Storage for SqliteStorage {
         .await
         .map_err(map_sqlx_err)?;
 
-        Ok(row.map(|(id, username, email, is_admin, must_change_password, created_at)| {
-            row_to_user(id, username, email, is_admin, must_change_password, created_at)
-        }))
+        Ok(row.map(
+            |(id, username, email, is_admin, must_change_password, created_at)| {
+                row_to_user(
+                    id,
+                    username,
+                    email,
+                    is_admin,
+                    must_change_password,
+                    created_at,
+                )
+            },
+        ))
     }
 
     async fn list_users(&self) -> Result<Vec<User>> {
@@ -155,9 +175,18 @@ impl Storage for SqliteStorage {
 
         Ok(rows
             .into_iter()
-            .map(|(id, username, email, is_admin, must_change_password, created_at)| {
-                row_to_user(id, username, email, is_admin, must_change_password, created_at)
-            })
+            .map(
+                |(id, username, email, is_admin, must_change_password, created_at)| {
+                    row_to_user(
+                        id,
+                        username,
+                        email,
+                        is_admin,
+                        must_change_password,
+                        created_at,
+                    )
+                },
+            )
             .collect())
     }
 
@@ -180,12 +209,21 @@ impl Storage for SqliteStorage {
         .await
         .map_err(map_sqlx_err)?;
 
-        Ok(row.map(|(id, username, email, is_admin, must_change_password, created_at, credential_json)| {
-            (
-                row_to_user(id, username, email, is_admin, must_change_password, created_at),
-                credential_json,
-            )
-        }))
+        Ok(row.map(
+            |(id, username, email, is_admin, must_change_password, created_at, credential_json)| {
+                (
+                    row_to_user(
+                        id,
+                        username,
+                        email,
+                        is_admin,
+                        must_change_password,
+                        created_at,
+                    ),
+                    credential_json,
+                )
+            },
+        ))
     }
 
     async fn insert_api_token(
@@ -218,31 +256,47 @@ impl Storage for SqliteStorage {
         .await
         .map_err(map_sqlx_err)?;
 
-        Ok(row.map(|(id, username, email, is_admin, must_change_password, created_at)| {
-            row_to_user(id, username, email, is_admin, must_change_password, created_at)
-        }))
+        Ok(row.map(
+            |(id, username, email, is_admin, must_change_password, created_at)| {
+                row_to_user(
+                    id,
+                    username,
+                    email,
+                    is_admin,
+                    must_change_password,
+                    created_at,
+                )
+            },
+        ))
     }
 
     async fn list_api_tokens(&self, user_id: Uuid) -> Result<Vec<ApiTokenSummary>> {
-        let rows: Vec<(Hyphenated, String, OffsetDateTime, Option<OffsetDateTime>, Option<OffsetDateTime>)> =
-            sqlx::query_as(
-                "SELECT id, name, created_at, last_used, expires_at FROM api_tokens \
+        let rows: Vec<(
+            Hyphenated,
+            String,
+            OffsetDateTime,
+            Option<OffsetDateTime>,
+            Option<OffsetDateTime>,
+        )> = sqlx::query_as(
+            "SELECT id, name, created_at, last_used, expires_at FROM api_tokens \
                  WHERE user_id = ? ORDER BY created_at DESC",
-            )
-            .bind(user_id.hyphenated())
-            .fetch_all(&self.pool)
-            .await
-            .map_err(map_sqlx_err)?;
+        )
+        .bind(user_id.hyphenated())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
 
         Ok(rows
             .into_iter()
-            .map(|(id, name, created_at, last_used, expires_at)| ApiTokenSummary {
-                id: id.into_uuid(),
-                name,
-                created_at,
-                last_used,
-                expires_at,
-            })
+            .map(
+                |(id, name, created_at, last_used, expires_at)| ApiTokenSummary {
+                    id: id.into_uuid(),
+                    name,
+                    created_at,
+                    last_used,
+                    expires_at,
+                },
+            )
             .collect())
     }
 
@@ -265,34 +319,53 @@ impl Storage for SqliteStorage {
             .map_err(map_sqlx_err)?;
 
         Ok(row.map(
-            |(id, owner_id, name, description, visibility, default_branch, created_at)| Repository {
-                id: id.into_uuid(),
-                owner_id: owner_id.into_uuid(),
-                name,
-                description,
-                visibility,
-                default_branch,
-                created_at,
+            |(id, owner_id, name, description, visibility, default_branch, created_at)| {
+                Repository {
+                    id: id.into_uuid(),
+                    owner_id: owner_id.into_uuid(),
+                    name,
+                    description,
+                    visibility,
+                    default_branch,
+                    created_at,
+                }
             },
         ))
     }
 
     async fn list_repositories_by_owner(&self, owner_id: Uuid) -> Result<Vec<Repository>> {
-        let rows: Vec<(Hyphenated, Hyphenated, String, Option<String>, Visibility, String, OffsetDateTime)> =
-            sqlx::query_as(
-                "SELECT id, owner_id, name, description, visibility, default_branch, created_at \
+        let rows: Vec<(
+            Hyphenated,
+            Hyphenated,
+            String,
+            Option<String>,
+            Visibility,
+            String,
+            OffsetDateTime,
+        )> = sqlx::query_as(
+            "SELECT id, owner_id, name, description, visibility, default_branch, created_at \
                  FROM repositories WHERE owner_id = ? ORDER BY name",
-            )
-            .bind(owner_id.hyphenated())
-            .fetch_all(&self.pool)
-            .await
-            .map_err(map_sqlx_err)?;
+        )
+        .bind(owner_id.hyphenated())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
 
         Ok(rows
             .into_iter()
-            .map(|(id, owner_id, name, description, visibility, default_branch, created_at)| {
-                row_to_repository(id, owner_id, name, description, visibility, default_branch, created_at)
-            })
+            .map(
+                |(id, owner_id, name, description, visibility, default_branch, created_at)| {
+                    row_to_repository(
+                        id,
+                        owner_id,
+                        name,
+                        description,
+                        visibility,
+                        default_branch,
+                        created_at,
+                    )
+                },
+            )
             .collect())
     }
 
@@ -319,9 +392,26 @@ impl Storage for SqliteStorage {
         Ok(rows
             .into_iter()
             .map(
-                |(id, owner_id, name, description, visibility, default_branch, created_at, owner_username)| {
+                |(
+                    id,
+                    owner_id,
+                    name,
+                    description,
+                    visibility,
+                    default_branch,
+                    created_at,
+                    owner_username,
+                )| {
                     (
-                        row_to_repository(id, owner_id, name, description, visibility, default_branch, created_at),
+                        row_to_repository(
+                            id,
+                            owner_id,
+                            name,
+                            description,
+                            visibility,
+                            default_branch,
+                            created_at,
+                        ),
                         owner_username,
                     )
                 },
@@ -330,13 +420,14 @@ impl Storage for SqliteStorage {
     }
 
     async fn get_repo_permission(&self, repo_id: Uuid, user_id: Uuid) -> Result<Option<RepoRole>> {
-        let role: Option<RepoRole> =
-            sqlx::query_scalar("SELECT role FROM repo_permissions WHERE repo_id = ? AND user_id = ?")
-                .bind(repo_id.hyphenated())
-                .bind(user_id.hyphenated())
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(map_sqlx_err)?;
+        let role: Option<RepoRole> = sqlx::query_scalar(
+            "SELECT role FROM repo_permissions WHERE repo_id = ? AND user_id = ?",
+        )
+        .bind(repo_id.hyphenated())
+        .bind(user_id.hyphenated())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
         Ok(role)
     }
 
@@ -359,19 +450,29 @@ impl Storage for SqliteStorage {
         Ok(())
     }
 
-    async fn get_auth_session(&self, code: &str, now: OffsetDateTime) -> Result<Option<AuthSession>> {
+    async fn get_auth_session(
+        &self,
+        code: &str,
+        now: OffsetDateTime,
+    ) -> Result<Option<AuthSession>> {
         use lv_core::models::AuthSessionState;
 
-        let row: Option<(String, AuthSessionState, Option<String>, Option<Hyphenated>, Option<String>, i64)> =
-            sqlx::query_as(
-                "SELECT code, state, token, user_id, username, expires_at \
+        let row: Option<(
+            String,
+            AuthSessionState,
+            Option<String>,
+            Option<Hyphenated>,
+            Option<String>,
+            i64,
+        )> = sqlx::query_as(
+            "SELECT code, state, token, user_id, username, expires_at \
                  FROM auth_sessions WHERE code = ? AND expires_at > ?",
-            )
-            .bind(code)
-            .bind(now.unix_timestamp())
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(map_sqlx_err)?;
+        )
+        .bind(code)
+        .bind(now.unix_timestamp())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
 
         row.map(|(code, state, token, user_id, username, expires_at)| {
             Ok(AuthSession {
@@ -428,9 +529,9 @@ struct SqliteStorageTx {
 
 impl SqliteStorageTx {
     fn conn(&mut self) -> Result<&mut SqliteConnection> {
-        self.tx
-            .as_deref_mut()
-            .ok_or_else(|| StorageError::Backend(Box::new(TxError("transaction already committed"))))
+        self.tx.as_deref_mut().ok_or_else(|| {
+            StorageError::Backend(Box::new(TxError("transaction already committed")))
+        })
     }
 }
 
@@ -494,7 +595,12 @@ impl StorageTx for SqliteStorageTx {
         Ok(())
     }
 
-    async fn insert_repo_permission(&mut self, repo_id: Uuid, user_id: Uuid, role: RepoRole) -> Result<()> {
+    async fn insert_repo_permission(
+        &mut self,
+        repo_id: Uuid,
+        user_id: Uuid,
+        role: RepoRole,
+    ) -> Result<()> {
         let conn = self.conn()?;
         sqlx::query("INSERT INTO repo_permissions (repo_id, user_id, role) VALUES (?, ?, ?)")
             .bind(repo_id.hyphenated())
@@ -513,13 +619,15 @@ impl StorageTx for SqliteStorageTx {
         credential_json: &str,
     ) -> Result<()> {
         let conn = self.conn()?;
-        sqlx::query("UPDATE user_identities SET credential_json = ? WHERE user_id = ? AND provider = ?")
-            .bind(credential_json)
-            .bind(user_id.hyphenated())
-            .bind(provider)
-            .execute(conn)
-            .await
-            .map_err(map_sqlx_err)?;
+        sqlx::query(
+            "UPDATE user_identities SET credential_json = ? WHERE user_id = ? AND provider = ?",
+        )
+        .bind(credential_json)
+        .bind(user_id.hyphenated())
+        .bind(provider)
+        .execute(conn)
+        .await
+        .map_err(map_sqlx_err)?;
         Ok(())
     }
 
@@ -541,10 +649,9 @@ impl StorageTx for SqliteStorageTx {
     }
 
     async fn commit(&mut self) -> Result<()> {
-        let tx = self
-            .tx
-            .take()
-            .ok_or_else(|| StorageError::Backend(Box::new(TxError("transaction already committed"))))?;
+        let tx = self.tx.take().ok_or_else(|| {
+            StorageError::Backend(Box::new(TxError("transaction already committed")))
+        })?;
         tx.commit().await.map_err(map_sqlx_err)?;
         Ok(())
     }

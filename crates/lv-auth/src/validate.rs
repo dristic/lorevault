@@ -61,11 +61,11 @@ mod tests {
 
     #[test]
     fn username_invalid() {
-        assert!(username("ab").is_err());           // too short
-        assert!(username("-alice").is_err());        // starts with hyphen
-        assert!(username("alice-").is_err());        // ends with hyphen
-        assert!(username("alice bob").is_err());     // space
-        assert!(username("alice@bob").is_err());     // @
+        assert!(username("ab").is_err()); // too short
+        assert!(username("-alice").is_err()); // starts with hyphen
+        assert!(username("alice-").is_err()); // ends with hyphen
+        assert!(username("alice bob").is_err()); // space
+        assert!(username("alice@bob").is_err()); // @
         assert!(username(&"a".repeat(40)).is_err()); // too long
     }
 

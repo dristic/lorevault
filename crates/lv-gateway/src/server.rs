@@ -36,10 +36,14 @@ pub async fn serve(
     let env_svc = EnvironmentServiceImpl::new(&state);
 
     builder
-        .add_service(UrcAuthApiServer::new(AuthApiImpl { state: state.clone() }))
+        .add_service(UrcAuthApiServer::new(AuthApiImpl {
+            state: state.clone(),
+        }))
         .add_service(EnvironmentServiceServer::new(env_svc.clone()))
         .add_service(EnvironmentServiceServerV1::new(env_svc))
-        .add_service(RebacApiServer::new(RebacApiImpl { state: state.clone() }))
+        .add_service(RebacApiServer::new(RebacApiImpl {
+            state: state.clone(),
+        }))
         .serve(addr)
         .await?;
 

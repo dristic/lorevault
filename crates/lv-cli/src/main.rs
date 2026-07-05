@@ -10,7 +10,11 @@ use client::ApiClient;
 use config::CliConfig;
 
 #[derive(Parser)]
-#[command(name = "lorevault", version, about = "LoreVault CLI — manage users, repos, and your own account")]
+#[command(
+    name = "lorevault",
+    version,
+    about = "LoreVault CLI — manage users, repos, and your own account"
+)]
 struct Cli {
     /// Print debug logs (request/response details, etc.) to stdout.
     #[arg(short = 'd', long, global = true)]
@@ -85,9 +89,15 @@ enum AdminUsersCommand {
     /// List every user on the instance.
     List,
     /// Grant or revoke admin privileges for a user.
-    SetAdmin { username: String, action: AdminAction },
+    SetAdmin {
+        username: String,
+        action: AdminAction,
+    },
     /// Reset another user's password (forces them to change it at next login).
-    ResetPassword { username: String, new_password: String },
+    ResetPassword {
+        username: String,
+        new_password: String,
+    },
 }
 
 #[derive(Clone, ValueEnum)]
@@ -114,7 +124,11 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     match cli.command {
-        Command::Login { server, user, password } => commands::login::run(server, user, password).await,
+        Command::Login {
+            server,
+            user,
+            password,
+        } => commands::login::run(server, user, password).await,
         Command::Logout => commands::logout::run(),
         Command::Health { server } => commands::health::run(server).await,
         Command::Whoami => commands::whoami::run(&build_client()?).await,
@@ -133,11 +147,19 @@ async fn main() -> anyhow::Result<()> {
                 AdminCommand::Users { command } => match command {
                     AdminUsersCommand::List => commands::admin::users::list(&client).await,
                     AdminUsersCommand::SetAdmin { username, action } => {
-                        commands::admin::users::set_admin(&client, username, matches!(action, AdminAction::Grant))
-                            .await
+                        commands::admin::users::set_admin(
+                            &client,
+                            username,
+                            matches!(action, AdminAction::Grant),
+                        )
+                        .await
                     }
-                    AdminUsersCommand::ResetPassword { username, new_password } => {
-                        commands::admin::users::reset_password(&client, username, new_password).await
+                    AdminUsersCommand::ResetPassword {
+                        username,
+                        new_password,
+                    } => {
+                        commands::admin::users::reset_password(&client, username, new_password)
+                            .await
                     }
                 },
                 AdminCommand::Repos { command } => match command {

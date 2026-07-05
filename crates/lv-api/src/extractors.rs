@@ -103,9 +103,14 @@ impl FromRequestParts<AppState> for AdminUser {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let user = <AuthenticatedUser as FromRequestParts<AppState>>::from_request_parts(parts, state).await?;
+        let user =
+            <AuthenticatedUser as FromRequestParts<AppState>>::from_request_parts(parts, state)
+                .await?;
         if !user.is_admin {
-            return Err(rejection(StatusCode::FORBIDDEN, "admin privileges required"));
+            return Err(rejection(
+                StatusCode::FORBIDDEN,
+                "admin privileges required",
+            ));
         }
         Ok(AdminUser {
             user_id: user.user_id,

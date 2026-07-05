@@ -35,7 +35,10 @@ pub async fn list_my_repos(
     State(state): State<AppState>,
     user: AuthenticatedUser,
 ) -> Result<Json<Vec<RepoSummary>>> {
-    let repos = state.storage.list_repositories_by_owner(user.user_id).await?;
+    let repos = state
+        .storage
+        .list_repositories_by_owner(user.user_id)
+        .await?;
 
     Ok(Json(
         repos

@@ -64,7 +64,11 @@ impl ApiClient {
 
     /// `POST` without auth (login, register-when-open) — caller supplies the
     /// body and gets the raw JSON response back.
-    pub async fn post_public<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T> {
+    pub async fn post_public<B: Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
         let url = self.url(path);
         debug!(method = "POST", %url, "sending request");
         let resp = self.http.post(&url).json(body).send().await?;

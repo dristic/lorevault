@@ -78,7 +78,9 @@ pub async fn set_admin(
             .filter(|u| u.is_admin)
             .count();
         if remaining_admins <= 1 {
-            return Err(ApiError::Conflict("cannot revoke the last remaining admin".into()));
+            return Err(ApiError::Conflict(
+                "cannot revoke the last remaining admin".into(),
+            ));
         }
     }
 

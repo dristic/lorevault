@@ -1,5 +1,6 @@
 use axum::{
-    Router, routing::{get, post}
+    routing::{get, post},
+    Router,
 };
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
@@ -18,7 +19,10 @@ pub fn router(state: AppState) -> Router {
         // Well-known public JWKS
         .route("/.well-known/jwks.json", get(well_known::jwks))
         // Browser-based login (Lore CLI device flow)
-        .route("/login", get(auth::browser_login_form).post(auth::browser_login_submit))
+        .route(
+            "/login",
+            get(auth::browser_login_form).post(auth::browser_login_submit),
+        )
         // Auth API
         .route("/api/v1/auth/register", post(auth::register))
         .route("/api/v1/auth/login", post(auth::login))
@@ -34,7 +38,10 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/repos/{owner}/{repo}", get(repos::get_repo))
         // Admin
         .route("/api/v1/admin/users", get(admin::list_users))
-        .route("/api/v1/admin/users/{username}/admin", post(admin::set_admin))
+        .route(
+            "/api/v1/admin/users/{username}/admin",
+            post(admin::set_admin),
+        )
         .route("/api/v1/admin/repos", get(admin::list_repos))
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())

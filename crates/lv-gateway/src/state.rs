@@ -18,6 +18,11 @@ impl GatewayState {
         server_url: String,
         web_url: String,
     ) -> Self {
-        Self { storage, jwt, server_url, web_url }
+        Self {
+            storage,
+            jwt,
+            server_url,
+            web_url,
+        }
     }
 }

@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use lv_core::models::{ApiTokenSummary, AuthSession, Repository, RepoRole, User, Visibility};
+use lv_core::models::{ApiTokenSummary, AuthSession, RepoRole, Repository, User, Visibility};
 
 pub use error::{Result, StorageError};
 

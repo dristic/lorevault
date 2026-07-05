@@ -20,6 +20,11 @@ impl AppState {
         auth: Arc<dyn AuthProvider>,
         jwt: Arc<JwtConfig>,
     ) -> Self {
-        Self { config, storage, auth, jwt }
+        Self {
+            config,
+            storage,
+            auth,
+            jwt,
+        }
     }
 }

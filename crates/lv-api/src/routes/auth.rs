@@ -12,8 +12,8 @@ use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 use lv_api_types::auth::{
-    AuthResponse, ChangePasswordRequest, CreateTokenRequest, CreateTokenResponse, LoginRequest, RegisterRequest,
-    ResetPasswordRequest,
+    AuthResponse, ChangePasswordRequest, CreateTokenRequest, CreateTokenResponse, LoginRequest,
+    RegisterRequest, ResetPasswordRequest,
 };
 use lv_auth::{jwt, provider::NewUser, token as api_token};
 
