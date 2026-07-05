@@ -1,11 +1,13 @@
 [workspace]
 members = [
     "crates/lv-core",
+    "crates/lv-api-types",
     "crates/lv-auth",
     "crates/lv-storage",
     "crates/lv-storage-sqlite",
     "crates/lv-gateway",
     "crates/lv-api",
+    "crates/lv-cli",
 ]
 resolver = "2"
 

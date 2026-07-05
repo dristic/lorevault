@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use lv_core::models::{AuthSession, Repository, RepoRole, User, Visibility};
+use lv_core::models::{ApiTokenSummary, AuthSession, Repository, RepoRole, User, Visibility};
 
 pub use error::{Result, StorageError};
 
@@ -14,6 +14,7 @@ pub use error::{Result, StorageError};
 pub trait Storage: Send + Sync + 'static {
     async fn get_user_by_id(&self, id: Uuid) -> Result<Option<User>>;
     async fn get_user_by_username(&self, username: &str) -> Result<Option<User>>;
+    async fn list_users(&self) -> Result<Vec<User>>;
 
     /// Looks up a user by provider + username-or-email login, returning the
     /// user alongside its stored credential payload for that identity.
@@ -31,6 +32,7 @@ pub trait Storage: Send + Sync + 'static {
         token_hash: &str,
     ) -> Result<()>;
     async fn find_user_by_token_hash(&self, token_hash: &str) -> Result<Option<User>>;
+    async fn list_api_tokens(&self, user_id: Uuid) -> Result<Vec<ApiTokenSummary>>;
 
     async fn get_repository_by_owner_and_name(
         &self,
@@ -40,6 +42,9 @@ pub trait Storage: Send + Sync + 'static {
     async fn get_repo_permission(&self, repo_id: Uuid, user_id: Uuid) -> Result<Option<RepoRole>>;
     /// Deletes the repository row; `repo_permissions` cascades via FK.
     async fn delete_repository(&self, id: Uuid) -> Result<()>;
+    async fn list_repositories_by_owner(&self, owner_id: Uuid) -> Result<Vec<Repository>>;
+    /// Every repository on the instance, paired with its owner's username. Admin-only use.
+    async fn list_repositories(&self) -> Result<Vec<(Repository, String)>>;
 
     async fn start_auth_session(&self, code: &str, expires_at: OffsetDateTime) -> Result<()>;
     async fn get_auth_session(

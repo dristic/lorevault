@@ -39,10 +39,10 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY --from=builder /app/target/release/lorevault /usr/local/bin/lorevault
+COPY --from=builder /app/target/release/lorevault-server /usr/local/bin/lorevault-server
 # Config directory must be present; secrets come from env vars at runtime
 COPY config /app/config
 
 EXPOSE 3000 9001
 
-CMD ["lorevault"]
+CMD ["lorevault-server"]

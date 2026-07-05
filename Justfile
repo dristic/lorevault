@@ -43,6 +43,12 @@ trace:
 trace:
     $env:RUST_LOG = "trace"; cargo run -p lv-api
 
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+# Run the lv-cli tool, e.g. `just cli login http://localhost:3000 --user admin`
+cli *args:
+    cargo run -p lv-cli -- {{args}}
+
 # ── Build / test / lint ───────────────────────────────────────────────────────
 
 build:

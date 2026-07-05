@@ -7,7 +7,7 @@ use time::OffsetDateTime;
 use uuid::fmt::Hyphenated;
 use uuid::Uuid;
 
-use lv_core::models::{AuthSession, Repository, RepoRole, User, Visibility};
+use lv_core::models::{ApiTokenSummary, AuthSession, Repository, RepoRole, User, Visibility};
 use lv_storage::{Result, Storage, StorageError, StorageTx};
 
 /// Opens (creating if missing) the SQLite database at `url` and configures it
@@ -84,6 +84,27 @@ fn row_to_user(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn row_to_repository(
+    id: Hyphenated,
+    owner_id: Hyphenated,
+    name: String,
+    description: Option<String>,
+    visibility: Visibility,
+    default_branch: String,
+    created_at: OffsetDateTime,
+) -> Repository {
+    Repository {
+        id: id.into_uuid(),
+        owner_id: owner_id.into_uuid(),
+        name,
+        description,
+        visibility,
+        default_branch,
+        created_at,
+    }
+}
+
 pub struct SqliteStorage {
     pool: SqlitePool,
 }
@@ -122,6 +143,22 @@ impl Storage for SqliteStorage {
         Ok(row.map(|(id, username, email, is_admin, must_change_password, created_at)| {
             row_to_user(id, username, email, is_admin, must_change_password, created_at)
         }))
+    }
+
+    async fn list_users(&self) -> Result<Vec<User>> {
+        let rows: Vec<(Hyphenated, String, String, bool, bool, OffsetDateTime)> = sqlx::query_as(
+            "SELECT id, username, email, is_admin, must_change_password, created_at FROM users ORDER BY username",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+
+        Ok(rows
+            .into_iter()
+            .map(|(id, username, email, is_admin, must_change_password, created_at)| {
+                row_to_user(id, username, email, is_admin, must_change_password, created_at)
+            })
+            .collect())
     }
 
     async fn get_user_identity_by_login(
@@ -186,6 +223,29 @@ impl Storage for SqliteStorage {
         }))
     }
 
+    async fn list_api_tokens(&self, user_id: Uuid) -> Result<Vec<ApiTokenSummary>> {
+        let rows: Vec<(Hyphenated, String, OffsetDateTime, Option<OffsetDateTime>, Option<OffsetDateTime>)> =
+            sqlx::query_as(
+                "SELECT id, name, created_at, last_used, expires_at FROM api_tokens \
+                 WHERE user_id = ? ORDER BY created_at DESC",
+            )
+            .bind(user_id.hyphenated())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_sqlx_err)?;
+
+        Ok(rows
+            .into_iter()
+            .map(|(id, name, created_at, last_used, expires_at)| ApiTokenSummary {
+                id: id.into_uuid(),
+                name,
+                created_at,
+                last_used,
+                expires_at,
+            })
+            .collect())
+    }
+
     async fn get_repository_by_owner_and_name(
         &self,
         owner_username: &str,
@@ -215,6 +275,58 @@ impl Storage for SqliteStorage {
                 created_at,
             },
         ))
+    }
+
+    async fn list_repositories_by_owner(&self, owner_id: Uuid) -> Result<Vec<Repository>> {
+        let rows: Vec<(Hyphenated, Hyphenated, String, Option<String>, Visibility, String, OffsetDateTime)> =
+            sqlx::query_as(
+                "SELECT id, owner_id, name, description, visibility, default_branch, created_at \
+                 FROM repositories WHERE owner_id = ? ORDER BY name",
+            )
+            .bind(owner_id.hyphenated())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_sqlx_err)?;
+
+        Ok(rows
+            .into_iter()
+            .map(|(id, owner_id, name, description, visibility, default_branch, created_at)| {
+                row_to_repository(id, owner_id, name, description, visibility, default_branch, created_at)
+            })
+            .collect())
+    }
+
+    async fn list_repositories(&self) -> Result<Vec<(Repository, String)>> {
+        let rows: Vec<(
+            Hyphenated,
+            Hyphenated,
+            String,
+            Option<String>,
+            Visibility,
+            String,
+            OffsetDateTime,
+            String,
+        )> = sqlx::query_as(
+            r#"SELECT r.id, r.owner_id, r.name, r.description, r.visibility, r.default_branch, r.created_at, u.username
+               FROM repositories r
+               JOIN users u ON r.owner_id = u.id
+               ORDER BY u.username, r.name"#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_err)?;
+
+        Ok(rows
+            .into_iter()
+            .map(
+                |(id, owner_id, name, description, visibility, default_branch, created_at, owner_username)| {
+                    (
+                        row_to_repository(id, owner_id, name, description, visibility, default_branch, created_at),
+                        owner_username,
+                    )
+                },
+            )
+            .collect())
     }
 
     async fn get_repo_permission(&self, repo_id: Uuid, user_id: Uuid) -> Result<Option<RepoRole>> {

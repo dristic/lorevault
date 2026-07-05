@@ -14,6 +14,16 @@ pub struct User {
     pub created_at: OffsetDateTime,
 }
 
+/// A user's own API token, without the hash — returned by self-service listing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiTokenSummary {
+    pub id: Uuid,
+    pub name: String,
+    pub created_at: OffsetDateTime,
+    pub last_used: Option<OffsetDateTime>,
+    pub expires_at: Option<OffsetDateTime>,
+}
+
 // ── Repositories ──────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
