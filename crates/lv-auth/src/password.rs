@@ -19,3 +19,35 @@ pub fn verify(password: &str, hash: &str) -> Result<()> {
         .verify_password(password.as_bytes(), &parsed)
         .map_err(|_| AuthError::InvalidCredentials)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hash_then_verify_succeeds() {
+        let hash = hash("correct-horse-battery-staple").unwrap();
+        assert!(verify("correct-horse-battery-staple", &hash).is_ok());
+    }
+
+    #[test]
+    fn verify_rejects_wrong_password() {
+        let hash = hash("correct-horse-battery-staple").unwrap();
+        assert!(matches!(
+            verify("wrong-password", &hash),
+            Err(AuthError::InvalidCredentials)
+        ));
+    }
+
+    #[test]
+    fn hashes_are_salted_differently() {
+        let a = hash("same-password").unwrap();
+        let b = hash("same-password").unwrap();
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn verify_rejects_malformed_hash() {
+        assert!(verify("anything", "not-a-real-hash").is_err());
+    }
+}

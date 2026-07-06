@@ -19,7 +19,10 @@ pub async fn list(
     writeln!(tw, "ID\tNAME\tOWNER\tDESCRIPTION\tVISIBILITY\tDEFAULT")?;
 
     for repo in repos {
-        let description = repo.description.unwrap_or_default().replace(['\t', '\n', '\r'], " ");
+        let description = repo
+            .description
+            .unwrap_or_default()
+            .replace(['\t', '\n', '\r'], " ");
         writeln!(
             tw,
             "{}\t{}\t{}\t{:.20}\t{}\t{}",

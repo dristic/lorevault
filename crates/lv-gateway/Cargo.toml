@@ -35,3 +35,7 @@ hex           = { workspace = true }
 
 [build-dependencies]
 tonic-prost-build = { workspace = true }
+
+[dev-dependencies]
+lv-storage-sqlite = { path = "../lv-storage-sqlite" }
+sqlx = { workspace = true }

@@ -108,11 +108,19 @@ async fn resolve_repo(state: &AppState, owner: &str, repo: &str) -> Result<Repos
         .ok_or(ApiError::NotFound)
 }
 
-async fn require_repo_admin(state: &AppState, user: &AuthenticatedUser, repo_id: Uuid) -> Result<()> {
+async fn require_repo_admin(
+    state: &AppState,
+    user: &AuthenticatedUser,
+    repo_id: Uuid,
+) -> Result<()> {
     if user.is_admin {
         return Ok(());
     }
-    match state.storage.get_repo_permission(repo_id, user.user_id).await? {
+    match state
+        .storage
+        .get_repo_permission(repo_id, user.user_id)
+        .await?
+    {
         Some(RepoRole::Admin) => Ok(()),
         _ => Err(ApiError::Forbidden),
     }
