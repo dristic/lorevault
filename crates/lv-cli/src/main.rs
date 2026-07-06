@@ -2,6 +2,7 @@ mod client;
 mod commands;
 mod config;
 mod error;
+mod pagination;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use tracing_subscriber::EnvFilter;
@@ -68,7 +69,10 @@ enum Command {
 #[derive(Subcommand)]
 enum ReposCommand {
     /// List repositories you own.
-    List,
+    List {
+        #[command(flatten)]
+        page: PageArgs,
+    },
     /// Grant a user access to a repository, or change their existing role.
     AddUser {
         /// Repository in `owner/name` form.
@@ -83,6 +87,20 @@ enum ReposCommand {
         repo: String,
         username: String,
     },
+}
+
+/// Shared pagination flags for `list` subcommands. Omit both to auto-follow
+/// every page and print one combined table; pass `--limit` to fetch a single
+/// page and get a `--cursor` hint for the next one.
+#[derive(clap::Args)]
+struct PageArgs {
+    /// Max rows to fetch per page. Omit to auto-follow every page and print
+    /// one combined table.
+    #[arg(long)]
+    limit: Option<u32>,
+    /// Resume from a cursor returned by a previous `--limit`'d call.
+    #[arg(long)]
+    cursor: Option<String>,
 }
 
 #[derive(Clone, ValueEnum)]
@@ -105,7 +123,10 @@ impl From<RepoRoleArg> for lv_api_types::repos::RepoRole {
 #[derive(Subcommand)]
 enum TokensCommand {
     /// List your API tokens.
-    List,
+    List {
+        #[command(flatten)]
+        page: PageArgs,
+    },
     /// Create a new API token (the raw value is shown once).
     Create { name: String },
 }
@@ -127,7 +148,10 @@ enum AdminCommand {
 #[derive(Subcommand)]
 enum AdminUsersCommand {
     /// List every user on the instance.
-    List,
+    List {
+        #[command(flatten)]
+        page: PageArgs,
+    },
     /// Create a new user account.
     Create {
         username: String,
@@ -158,7 +182,10 @@ enum AdminAction {
 #[derive(Subcommand)]
 enum AdminReposCommand {
     /// List every repository on the instance.
-    List,
+    List {
+        #[command(flatten)]
+        page: PageArgs,
+    },
 }
 
 #[tokio::main]
@@ -185,7 +212,9 @@ async fn main() -> anyhow::Result<()> {
         Command::Repos { command } => {
             let client = build_client()?;
             match command {
-                ReposCommand::List => commands::repos::list(&client).await,
+                ReposCommand::List { page } => {
+                    commands::repos::list(&client, page.limit, page.cursor).await
+                }
                 ReposCommand::AddUser {
                     repo,
                     username,
@@ -199,7 +228,9 @@ async fn main() -> anyhow::Result<()> {
         Command::Tokens { command } => {
             let client = build_client()?;
             match command {
-                TokensCommand::List => commands::tokens::list(&client).await,
+                TokensCommand::List { page } => {
+                    commands::tokens::list(&client, page.limit, page.cursor).await
+                }
                 TokensCommand::Create { name } => commands::tokens::create(&client, name).await,
             }
         }
@@ -207,7 +238,9 @@ async fn main() -> anyhow::Result<()> {
             let client = build_client()?;
             match command {
                 AdminCommand::Users { command } => match command {
-                    AdminUsersCommand::List => commands::admin::users::list(&client).await,
+                    AdminUsersCommand::List { page } => {
+                        commands::admin::users::list(&client, page.limit, page.cursor).await
+                    }
                     AdminUsersCommand::Create {
                         username,
                         email,
@@ -230,7 +263,9 @@ async fn main() -> anyhow::Result<()> {
                     }
                 },
                 AdminCommand::Repos { command } => match command {
-                    AdminReposCommand::List => commands::admin::repos::list(&client).await,
+                    AdminReposCommand::List { page } => {
+                        commands::admin::repos::list(&client, page.limit, page.cursor).await
+                    }
                 },
             }
         }

@@ -41,6 +41,26 @@ impl ApiClient {
         Self::handle(req.send().await?).await
     }
 
+    /// `GET` a single page of a paginated list endpoint.
+    pub async fn get_page<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        limit: Option<u32>,
+        cursor: Option<&str>,
+    ) -> Result<lv_api_types::pagination::Page<T>> {
+        let url = self.url(path);
+        debug!(method = "GET", %url, ?limit, ?cursor, "sending request");
+        let mut query = Vec::new();
+        if let Some(limit) = limit {
+            query.push(("limit", limit.to_string()));
+        }
+        if let Some(cursor) = cursor {
+            query.push(("cursor", cursor.to_string()));
+        }
+        let req = self.auth(self.http.get(&url))?.query(&query);
+        Self::handle(req.send().await?).await
+    }
+
     pub async fn post<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T> {
         let url = self.url(path);
         debug!(method = "POST", %url, "sending request");

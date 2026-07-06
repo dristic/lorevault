@@ -4,11 +4,17 @@ use lv_api_types::admin::AdminRepoSummary;
 use tabwriter::TabWriter;
 
 use crate::client::ApiClient;
+use crate::pagination;
 
-pub async fn list(client: &ApiClient) -> anyhow::Result<()> {
-    let repos = client.get::<Vec<AdminRepoSummary>>("/api/v1/admin/repos")
-        .await?;
-    
+pub async fn list(
+    client: &ApiClient,
+    limit: Option<u32>,
+    cursor: Option<String>,
+) -> anyhow::Result<()> {
+    let repos =
+        pagination::collect::<AdminRepoSummary>(client, "/api/v1/admin/repos", limit, cursor)
+            .await?;
+
     let mut tw = TabWriter::new(std::io::stdout());
     writeln!(tw, "ID\tNAME\tOWNER\tDESCRIPTION\tVISIBILITY\tDEFAULT")?;
 

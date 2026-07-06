@@ -1,10 +1,12 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
 
 use lv_api_types::admin::{AdminRepoSummary, AdminUserSummary, SetAdminRequest};
+use lv_api_types::pagination::{Page, PageParams};
+use lv_core::pagination::clamp_limit;
 
 use crate::{
     dto::visibility_to_wire,
@@ -16,11 +18,16 @@ use crate::{
 pub async fn list_users(
     State(state): State<AppState>,
     _admin: AdminUser,
-) -> Result<Json<Vec<AdminUserSummary>>> {
-    let users = state.storage.list_users().await?;
+    Query(page): Query<PageParams>,
+) -> Result<Json<Page<AdminUserSummary>>> {
+    let page = state
+        .storage
+        .list_users(clamp_limit(page.limit), page.cursor.as_deref())
+        .await?;
 
-    Ok(Json(
-        users
+    Ok(Json(Page {
+        items: page
+            .items
             .into_iter()
             .map(|u| AdminUserSummary {
                 id: u.id,
@@ -31,17 +38,23 @@ pub async fn list_users(
                 created_at: u.created_at,
             })
             .collect(),
-    ))
+        next_cursor: page.next_cursor,
+    }))
 }
 
 pub async fn list_repos(
     State(state): State<AppState>,
     _admin: AdminUser,
-) -> Result<Json<Vec<AdminRepoSummary>>> {
-    let repos = state.storage.list_repositories().await?;
+    Query(page): Query<PageParams>,
+) -> Result<Json<Page<AdminRepoSummary>>> {
+    let page = state
+        .storage
+        .list_repositories(clamp_limit(page.limit), page.cursor.as_deref())
+        .await?;
 
-    Ok(Json(
-        repos
+    Ok(Json(Page {
+        items: page
+            .items
             .into_iter()
             .map(|(r, owner)| AdminRepoSummary {
                 id: r.id,
@@ -52,7 +65,8 @@ pub async fn list_repos(
                 default_branch: r.default_branch,
             })
             .collect(),
-    ))
+        next_cursor: page.next_cursor,
+    }))
 }
 
 /// Grants or revokes admin privileges for another user. Refuses to revoke the
@@ -70,13 +84,7 @@ pub async fn set_admin(
         .ok_or(ApiError::NotFound)?;
 
     if !req.is_admin && target.is_admin {
-        let remaining_admins = state
-            .storage
-            .list_users()
-            .await?
-            .iter()
-            .filter(|u| u.is_admin)
-            .count();
+        let remaining_admins = state.storage.count_admins().await?;
         if remaining_admins <= 1 {
             return Err(ApiError::Conflict(
                 "cannot revoke the last remaining admin".into(),
