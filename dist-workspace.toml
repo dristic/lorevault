@@ -10,7 +10,10 @@ ci = "github"
 # The installers to generate for each app
 installers = ["shell", "powershell"]
 # Target platforms to build apps for (Rust target-triple syntax)
-targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+# apple-darwin targets are dropped for now: dist refuses to cross-compile them
+# from a non-macOS runner, and we have no GitHub-hosted macOS runner minutes
+# or self-hosted Mac hardware. Add them back once runner access exists.
+targets = ["aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
 # Path that installers should place binaries in
 install-path = "CARGO_HOME"
 # Where to host releases
@@ -20,9 +23,6 @@ install-updater = false
 
 [dist.dependencies.apt]
 protobuf-compiler = '*'
-
-[dist.dependencies.homebrew]
-protobuf = '*'
 
 [dist.dependencies.chocolatey]
 protoc = '*'
