@@ -8,7 +8,12 @@ use uuid::fmt::Hyphenated;
 use uuid::Uuid;
 
 use lv_core::models::{ApiTokenSummary, AuthSession, RepoRole, Repository, User, Visibility};
+use lv_core::pagination::{decode_cursor, encode_cursor, Page};
 use lv_storage::{Result, Storage, StorageError, StorageTx};
+
+fn cursor_err(_: lv_core::error::CoreError) -> StorageError {
+    StorageError::Validation("invalid pagination cursor".into())
+}
 
 /// Opens (creating if missing) the SQLite database at `url` and configures it
 /// for concurrent access (WAL) and referential integrity.
@@ -165,15 +170,22 @@ impl Storage for SqliteStorage {
         ))
     }
 
-    async fn list_users(&self) -> Result<Vec<User>> {
+    async fn list_users(&self, limit: u32, cursor: Option<&str>) -> Result<Page<User>> {
+        let after: Option<String> = cursor.map(decode_cursor).transpose().map_err(cursor_err)?;
+        let fetch = i64::from(limit) + 1;
+
         let rows: Vec<(Hyphenated, String, String, bool, bool, OffsetDateTime)> = sqlx::query_as(
-            "SELECT id, username, email, is_admin, must_change_password, created_at FROM users ORDER BY username",
+            "SELECT id, username, email, is_admin, must_change_password, created_at FROM users \
+             WHERE ?1 IS NULL OR username > ?1 \
+             ORDER BY username LIMIT ?2",
         )
+        .bind(after)
+        .bind(fetch)
         .fetch_all(&self.pool)
         .await
         .map_err(map_sqlx_err)?;
 
-        Ok(rows
+        let mut users: Vec<User> = rows
             .into_iter()
             .map(
                 |(id, username, email, is_admin, must_change_password, created_at)| {
@@ -187,7 +199,27 @@ impl Storage for SqliteStorage {
                     )
                 },
             )
-            .collect())
+            .collect();
+
+        let next_cursor = if users.len() > limit as usize {
+            users.truncate(limit as usize);
+            users.last().map(|u| encode_cursor(&u.username))
+        } else {
+            None
+        };
+
+        Ok(Page {
+            items: users,
+            next_cursor,
+        })
+    }
+
+    async fn count_admins(&self) -> Result<i64> {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE is_admin = 1")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(map_sqlx_err)?;
+        Ok(count)
     }
 
     async fn get_user_identity_by_login(
@@ -270,7 +302,20 @@ impl Storage for SqliteStorage {
         ))
     }
 
-    async fn list_api_tokens(&self, user_id: Uuid) -> Result<Vec<ApiTokenSummary>> {
+    async fn list_api_tokens(
+        &self,
+        user_id: Uuid,
+        limit: u32,
+        cursor: Option<&str>,
+    ) -> Result<Page<ApiTokenSummary>> {
+        let after: Option<(OffsetDateTime, Uuid)> =
+            cursor.map(decode_cursor).transpose().map_err(cursor_err)?;
+        let (after_created_at, after_id) = match after {
+            Some((created_at, id)) => (Some(created_at), Some(id.hyphenated())),
+            None => (None, None),
+        };
+        let fetch = i64::from(limit) + 1;
+
         let rows: Vec<(
             Hyphenated,
             String,
@@ -279,14 +324,19 @@ impl Storage for SqliteStorage {
             Option<OffsetDateTime>,
         )> = sqlx::query_as(
             "SELECT id, name, created_at, last_used, expires_at FROM api_tokens \
-                 WHERE user_id = ? ORDER BY created_at DESC",
+             WHERE user_id = ?1 \
+               AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id < ?3)) \
+             ORDER BY created_at DESC, id DESC LIMIT ?4",
         )
         .bind(user_id.hyphenated())
+        .bind(after_created_at)
+        .bind(after_id)
+        .bind(fetch)
         .fetch_all(&self.pool)
         .await
         .map_err(map_sqlx_err)?;
 
-        Ok(rows
+        let mut tokens: Vec<ApiTokenSummary> = rows
             .into_iter()
             .map(
                 |(id, name, created_at, last_used, expires_at)| ApiTokenSummary {
@@ -297,7 +347,21 @@ impl Storage for SqliteStorage {
                     expires_at,
                 },
             )
-            .collect())
+            .collect();
+
+        let next_cursor = if tokens.len() > limit as usize {
+            tokens.truncate(limit as usize);
+            tokens
+                .last()
+                .map(|t| encode_cursor(&(t.created_at, t.id)))
+        } else {
+            None
+        };
+
+        Ok(Page {
+            items: tokens,
+            next_cursor,
+        })
     }
 
     async fn get_repository_by_owner_and_name(
@@ -333,7 +397,15 @@ impl Storage for SqliteStorage {
         ))
     }
 
-    async fn list_repositories_by_owner(&self, owner_id: Uuid) -> Result<Vec<Repository>> {
+    async fn list_repositories_by_owner(
+        &self,
+        owner_id: Uuid,
+        limit: u32,
+        cursor: Option<&str>,
+    ) -> Result<Page<Repository>> {
+        let after: Option<String> = cursor.map(decode_cursor).transpose().map_err(cursor_err)?;
+        let fetch = i64::from(limit) + 1;
+
         let rows: Vec<(
             Hyphenated,
             Hyphenated,
@@ -344,14 +416,17 @@ impl Storage for SqliteStorage {
             OffsetDateTime,
         )> = sqlx::query_as(
             "SELECT id, owner_id, name, description, visibility, default_branch, created_at \
-                 FROM repositories WHERE owner_id = ? ORDER BY name",
+             FROM repositories WHERE owner_id = ?1 AND (?2 IS NULL OR name > ?2) \
+             ORDER BY name LIMIT ?3",
         )
         .bind(owner_id.hyphenated())
+        .bind(after)
+        .bind(fetch)
         .fetch_all(&self.pool)
         .await
         .map_err(map_sqlx_err)?;
 
-        Ok(rows
+        let mut repos: Vec<Repository> = rows
             .into_iter()
             .map(
                 |(id, owner_id, name, description, visibility, default_branch, created_at)| {
@@ -366,10 +441,34 @@ impl Storage for SqliteStorage {
                     )
                 },
             )
-            .collect())
+            .collect();
+
+        let next_cursor = if repos.len() > limit as usize {
+            repos.truncate(limit as usize);
+            repos.last().map(|r| encode_cursor(&r.name))
+        } else {
+            None
+        };
+
+        Ok(Page {
+            items: repos,
+            next_cursor,
+        })
     }
 
-    async fn list_repositories(&self) -> Result<Vec<(Repository, String)>> {
+    async fn list_repositories(
+        &self,
+        limit: u32,
+        cursor: Option<&str>,
+    ) -> Result<Page<(Repository, String)>> {
+        let after: Option<(String, String)> =
+            cursor.map(decode_cursor).transpose().map_err(cursor_err)?;
+        let (after_username, after_name) = match after {
+            Some((username, name)) => (Some(username), Some(name)),
+            None => (None, None),
+        };
+        let fetch = i64::from(limit) + 1;
+
         let rows: Vec<(
             Hyphenated,
             Hyphenated,
@@ -383,13 +482,17 @@ impl Storage for SqliteStorage {
             r#"SELECT r.id, r.owner_id, r.name, r.description, r.visibility, r.default_branch, r.created_at, u.username
                FROM repositories r
                JOIN users u ON r.owner_id = u.id
-               ORDER BY u.username, r.name"#,
+               WHERE ?1 IS NULL OR u.username > ?1 OR (u.username = ?1 AND r.name > ?2)
+               ORDER BY u.username, r.name LIMIT ?3"#,
         )
+        .bind(after_username)
+        .bind(after_name)
+        .bind(fetch)
         .fetch_all(&self.pool)
         .await
         .map_err(map_sqlx_err)?;
 
-        Ok(rows
+        let mut repos: Vec<(Repository, String)> = rows
             .into_iter()
             .map(
                 |(
@@ -416,7 +519,21 @@ impl Storage for SqliteStorage {
                     )
                 },
             )
-            .collect())
+            .collect();
+
+        let next_cursor = if repos.len() > limit as usize {
+            repos.truncate(limit as usize);
+            repos
+                .last()
+                .map(|(r, owner_username)| encode_cursor(&(owner_username.clone(), r.name.clone())))
+        } else {
+            None
+        };
+
+        Ok(Page {
+            items: repos,
+            next_cursor,
+        })
     }
 
     async fn get_repo_permission(&self, repo_id: Uuid, user_id: Uuid) -> Result<Option<RepoRole>> {

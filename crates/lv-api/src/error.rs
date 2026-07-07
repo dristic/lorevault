@@ -71,6 +71,7 @@ impl From<StorageError> for ApiError {
         match e {
             StorageError::NotFound => ApiError::NotFound,
             StorageError::UniqueViolation { field } => ApiError::Conflict(field.to_string()),
+            StorageError::Validation(msg) => ApiError::BadRequest(msg),
             other => ApiError::Internal(other.into()),
         }
     }

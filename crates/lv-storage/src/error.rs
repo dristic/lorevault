@@ -11,6 +11,9 @@ pub enum StorageError {
     #[error("foreign key violation")]
     ForeignKeyViolation,
 
+    #[error("invalid input: {0}")]
+    Validation(String),
+
     #[error("backend error")]
     Backend(#[source] Box<dyn std::error::Error + Send + Sync>),
 }

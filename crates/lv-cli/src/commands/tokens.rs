@@ -4,11 +4,16 @@ use lv_api_types::{auth::{CreateTokenRequest, CreateTokenResponse}, users::Token
 use tabwriter::TabWriter;
 
 use crate::client::ApiClient;
+use crate::pagination;
 
-pub async fn list(client: &ApiClient) -> anyhow::Result<()> {
-    let tokens = client
-        .get::<Vec<TokenSummary>>("/api/v1/users/me/tokens")
-        .await?;
+pub async fn list(
+    client: &ApiClient,
+    limit: Option<u32>,
+    cursor: Option<String>,
+) -> anyhow::Result<()> {
+    let tokens =
+        pagination::collect::<TokenSummary>(client, "/api/v1/users/me/tokens", limit, cursor)
+            .await?;
 
     let mut tw = TabWriter::new(std::io::stdout());
     writeln!(tw, "NAME\tCREATED\tLAST USED\tEXPIRES")?;

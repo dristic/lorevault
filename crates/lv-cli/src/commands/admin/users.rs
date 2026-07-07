@@ -5,12 +5,16 @@ use lv_api_types::auth::{AuthResponse, RegisterRequest};
 use tabwriter::TabWriter;
 
 use crate::client::ApiClient;
+use crate::pagination;
 
-/// TODO: `client.get::<Vec<lv_api_types::admin::AdminUserSummary>>("/api/v1/admin/users")`.
-pub async fn list(client: &ApiClient) -> anyhow::Result<()> {
-    let users = client
-        .get::<Vec<AdminUserSummary>>("/api/v1/admin/users")
-        .await?;
+pub async fn list(
+    client: &ApiClient,
+    limit: Option<u32>,
+    cursor: Option<String>,
+) -> anyhow::Result<()> {
+    let users =
+        pagination::collect::<AdminUserSummary>(client, "/api/v1/admin/users", limit, cursor)
+            .await?;
 
     let mut tw = TabWriter::new(std::io::stdout());
     writeln!(tw, "USERNAME\tEMAIL\tADMIN\tCREATED")?;

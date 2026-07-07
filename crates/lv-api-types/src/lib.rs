@@ -7,5 +7,6 @@
 
 pub mod admin;
 pub mod auth;
+pub mod pagination;
 pub mod repos;
 pub mod users;

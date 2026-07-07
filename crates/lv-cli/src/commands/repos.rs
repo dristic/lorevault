@@ -5,11 +5,16 @@ use lv_api_types::users::RepoSummary;
 use tabwriter::TabWriter;
 
 use crate::client::ApiClient;
+use crate::pagination;
 
-pub async fn list(client: &ApiClient) -> anyhow::Result<()> {
-    let repos = client
-        .get::<Vec<RepoSummary>>("/api/v1/users/me/repos")
-        .await?;
+pub async fn list(
+    client: &ApiClient,
+    limit: Option<u32>,
+    cursor: Option<String>,
+) -> anyhow::Result<()> {
+    let repos =
+        pagination::collect::<RepoSummary>(client, "/api/v1/users/me/repos", limit, cursor)
+            .await?;
 
     let mut tw = TabWriter::new(std::io::stdout());
     writeln!(tw, "ID\tNAME\tDESCRIPTION\tVISIBILITY\tDEFAULT")?;

@@ -1,9 +1,11 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     Json,
 };
 
+use lv_api_types::pagination::{Page, PageParams};
 use lv_api_types::users::{RepoSummary, TokenSummary, UserResponse};
+use lv_core::pagination::clamp_limit;
 
 use crate::{
     dto::visibility_to_wire,
@@ -34,14 +36,16 @@ pub async fn get_user(
 pub async fn list_my_repos(
     State(state): State<AppState>,
     user: AuthenticatedUser,
-) -> Result<Json<Vec<RepoSummary>>> {
-    let repos = state
+    Query(page): Query<PageParams>,
+) -> Result<Json<Page<RepoSummary>>> {
+    let page = state
         .storage
-        .list_repositories_by_owner(user.user_id)
+        .list_repositories_by_owner(user.user_id, clamp_limit(page.limit), page.cursor.as_deref())
         .await?;
 
-    Ok(Json(
-        repos
+    Ok(Json(Page {
+        items: page
+            .items
             .into_iter()
             .map(|r| RepoSummary {
                 id: r.id,
@@ -51,17 +55,23 @@ pub async fn list_my_repos(
                 default_branch: r.default_branch,
             })
             .collect(),
-    ))
+        next_cursor: page.next_cursor,
+    }))
 }
 
 pub async fn list_my_tokens(
     State(state): State<AppState>,
     user: AuthenticatedUser,
-) -> Result<Json<Vec<TokenSummary>>> {
-    let tokens = state.storage.list_api_tokens(user.user_id).await?;
+    Query(page): Query<PageParams>,
+) -> Result<Json<Page<TokenSummary>>> {
+    let page = state
+        .storage
+        .list_api_tokens(user.user_id, clamp_limit(page.limit), page.cursor.as_deref())
+        .await?;
 
-    Ok(Json(
-        tokens
+    Ok(Json(Page {
+        items: page
+            .items
             .into_iter()
             .map(|t| TokenSummary {
                 id: t.id,
@@ -71,7 +81,8 @@ pub async fn list_my_tokens(
                 expires_at: t.expires_at,
             })
             .collect(),
-    ))
+        next_cursor: page.next_cursor,
+    }))
 }
 
 pub async fn get_me(

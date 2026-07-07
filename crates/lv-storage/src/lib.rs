@@ -5,6 +5,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use lv_core::models::{ApiTokenSummary, AuthSession, RepoRole, Repository, User, Visibility};
+use lv_core::pagination::Page;
 
 pub use error::{Result, StorageError};
 
@@ -14,7 +15,10 @@ pub use error::{Result, StorageError};
 pub trait Storage: Send + Sync + 'static {
     async fn get_user_by_id(&self, id: Uuid) -> Result<Option<User>>;
     async fn get_user_by_username(&self, username: &str) -> Result<Option<User>>;
-    async fn list_users(&self) -> Result<Vec<User>>;
+    async fn list_users(&self, limit: u32, cursor: Option<&str>) -> Result<Page<User>>;
+    /// Count of admin users, independent of pagination — used by the
+    /// last-admin lockout check, which needs a true total, not one page.
+    async fn count_admins(&self) -> Result<i64>;
 
     /// Looks up a user by provider + username-or-email login, returning the
     /// user alongside its stored credential payload for that identity.
@@ -32,7 +36,12 @@ pub trait Storage: Send + Sync + 'static {
         token_hash: &str,
     ) -> Result<()>;
     async fn find_user_by_token_hash(&self, token_hash: &str) -> Result<Option<User>>;
-    async fn list_api_tokens(&self, user_id: Uuid) -> Result<Vec<ApiTokenSummary>>;
+    async fn list_api_tokens(
+        &self,
+        user_id: Uuid,
+        limit: u32,
+        cursor: Option<&str>,
+    ) -> Result<Page<ApiTokenSummary>>;
 
     async fn get_repository_by_owner_and_name(
         &self,
@@ -48,9 +57,18 @@ pub trait Storage: Send + Sync + 'static {
     async fn remove_repo_permission(&self, repo_id: Uuid, user_id: Uuid) -> Result<()>;
     /// Deletes the repository row; `repo_permissions` cascades via FK.
     async fn delete_repository(&self, id: Uuid) -> Result<()>;
-    async fn list_repositories_by_owner(&self, owner_id: Uuid) -> Result<Vec<Repository>>;
+    async fn list_repositories_by_owner(
+        &self,
+        owner_id: Uuid,
+        limit: u32,
+        cursor: Option<&str>,
+    ) -> Result<Page<Repository>>;
     /// Every repository on the instance, paired with its owner's username. Admin-only use.
-    async fn list_repositories(&self) -> Result<Vec<(Repository, String)>>;
+    async fn list_repositories(
+        &self,
+        limit: u32,
+        cursor: Option<&str>,
+    ) -> Result<Page<(Repository, String)>>;
 
     async fn start_auth_session(&self, code: &str, expires_at: OffsetDateTime) -> Result<()>;
     async fn get_auth_session(
