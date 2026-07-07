@@ -86,6 +86,50 @@ async fn missing_user_lookups_return_none() {
 }
 
 #[tokio::test]
+async fn list_users_paginates_by_username_cursor() {
+    let storage = test_storage().await;
+    insert_user(&storage, "alice", "alice@example.com").await;
+    insert_user(&storage, "bob", "bob@example.com").await;
+    insert_user(&storage, "carol", "carol@example.com").await;
+
+    let first_page = storage.list_users(2, None).await.unwrap();
+    assert_eq!(
+        first_page
+            .items
+            .iter()
+            .map(|u| u.username.as_str())
+            .collect::<Vec<_>>(),
+        vec!["alice", "bob"]
+    );
+    let cursor = first_page.next_cursor.expect("more rows remain");
+
+    let second_page = storage.list_users(2, Some(&cursor)).await.unwrap();
+    assert_eq!(
+        second_page
+            .items
+            .iter()
+            .map(|u| u.username.as_str())
+            .collect::<Vec<_>>(),
+        vec!["carol"]
+    );
+    assert!(second_page.next_cursor.is_none());
+}
+
+#[tokio::test]
+async fn count_admins_counts_only_admins() {
+    let storage = test_storage().await;
+    let alice_id = insert_user(&storage, "alice", "alice@example.com").await;
+    insert_user(&storage, "bob", "bob@example.com").await;
+    assert_eq!(storage.count_admins().await.unwrap(), 0);
+
+    let mut tx = storage.begin().await.unwrap();
+    tx.set_admin_flags(alice_id, true, false).await.unwrap();
+    tx.commit().await.unwrap();
+
+    assert_eq!(storage.count_admins().await.unwrap(), 1);
+}
+
+#[tokio::test]
 async fn duplicate_username_is_a_unique_violation() {
     let storage = test_storage().await;
     insert_user(&storage, "alice", "alice@example.com").await;
@@ -189,9 +233,10 @@ async fn api_token_roundtrip() {
         .unwrap()
         .is_none());
 
-    let tokens = storage.list_api_tokens(user_id).await.unwrap();
-    assert_eq!(tokens.len(), 1);
-    assert_eq!(tokens[0].name, "ci-token");
+    let tokens = storage.list_api_tokens(user_id, 50, None).await.unwrap();
+    assert_eq!(tokens.items.len(), 1);
+    assert_eq!(tokens.items[0].name, "ci-token");
+    assert!(tokens.next_cursor.is_none());
 }
 
 #[tokio::test]
@@ -307,16 +352,21 @@ async fn list_repositories_by_owner_and_for_admin() {
         tx.commit().await.unwrap();
     }
 
-    let alice_repos = storage.list_repositories_by_owner(alice_id).await.unwrap();
-    assert_eq!(alice_repos.len(), 1);
-    assert_eq!(alice_repos[0].name, "vault-a");
+    let alice_repos = storage
+        .list_repositories_by_owner(alice_id, 50, None)
+        .await
+        .unwrap();
+    assert_eq!(alice_repos.items.len(), 1);
+    assert_eq!(alice_repos.items[0].name, "vault-a");
 
-    let all_repos = storage.list_repositories().await.unwrap();
-    assert_eq!(all_repos.len(), 2);
+    let all_repos = storage.list_repositories(50, None).await.unwrap();
+    assert_eq!(all_repos.items.len(), 2);
     assert!(all_repos
+        .items
         .iter()
         .any(|(r, owner)| r.name == "vault-a" && owner == "alice"));
     assert!(all_repos
+        .items
         .iter()
         .any(|(r, owner)| r.name == "vault-b" && owner == "bob"));
 }

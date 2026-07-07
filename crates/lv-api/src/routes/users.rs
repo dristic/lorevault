@@ -40,7 +40,11 @@ pub async fn list_my_repos(
 ) -> Result<Json<Page<RepoSummary>>> {
     let page = state
         .storage
-        .list_repositories_by_owner(user.user_id, clamp_limit(page.limit), page.cursor.as_deref())
+        .list_repositories_by_owner(
+            user.user_id,
+            clamp_limit(page.limit),
+            page.cursor.as_deref(),
+        )
         .await?;
 
     Ok(Json(Page {
@@ -66,7 +70,11 @@ pub async fn list_my_tokens(
 ) -> Result<Json<Page<TokenSummary>>> {
     let page = state
         .storage
-        .list_api_tokens(user.user_id, clamp_limit(page.limit), page.cursor.as_deref())
+        .list_api_tokens(
+            user.user_id,
+            clamp_limit(page.limit),
+            page.cursor.as_deref(),
+        )
         .await?;
 
     Ok(Json(Page {
