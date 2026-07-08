@@ -160,3 +160,112 @@ pub fn decode(config: &JwtConfig, token: &str) -> Result<Claims> {
             }
         })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Test-only fixture key — never used outside the test binary.
+    const TEST_PRIVATE_KEY_PEM: &str = "-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC0pTr0Js+PZbmN
+apNhLY/sLZlxQo4SXkVw+F64TE+uws3lRM9NOOcPIH5zkkgyZOlN/708RzMHEggT
+Z6qrYQarjkZTCaIN9WYlpfDR7l3dQp2OJBw+PoYU/CQdBK01hsOtUwS7ocX/awdP
+rkYdx+OpqlbkHQH16VzQJlMo4EnEtxo07uLU2FmNeJEKtfmL32kg1mQvvP3XT/6R
+LpAxyuHQ2Xf+nxY2HsPdms3pU3OnIuKP5YhNFuurrFAjZfX05z+HCNPHiDIEEbVo
+ulroj/tQjryxB/8g8xqA8YbpepHtXJcYFqvurSrKXPWQjfQHi9jJN4xlRsR1kWsE
+34AmdTqVAgMBAAECggEADyWkqBjCAjDiKmazlWwr236mVV4iig1ADt0wmg0CCHIa
+sB0BMeUx0K2llLzBE4KtImZtgGqq726WYUQpxiWEWOm84VUXMsrvJfyAUSYG1ljx
+25uRB7IX7ZYH1CwSdwDGExg5Nx91OfnIOujuxav/XbhkAUwiYDORXf28rtqBrP4W
+DOty7b/6Wq8AVyNs4qW0BlfwxYbZ7FLj6h+yo5oTDRlIDRaiVbvJsJaYhl3pAdBW
+BAl6CzGDKkqSPTk43gKGUuzEk+N8ZoVIIsZZp4AfpqkX1ZF5R9D6tFWiN/E5vp0V
+m2tUCWld1SpOIw/9nhBSUFh1MaxX2TafLBJSqJADMQKBgQD2dxwSVYRwj1xB3O/I
+rmtpHbuB7G1eLY1Tk5IaKMcnsBb8oMQ3wTLZNPAzPeLJv0f4ca0bqQ6kuizp3RMR
+kNRjJLQOsqF1+gMypegz9WUCm1pMHCHXRnOsXhxLTwnXOJ3A/SezpZ5jjI1GLT41
+Rz1caUkRnOmbENTAc8OlBZmcZQKBgQC7okShXd84QyVJnfCtCStvUJccYU52HLgj
+3kPymmAQfWE9K00E5WWgFLhjZcM4Kv4PSaZ3uGBCwoFF7jVyHfedsZqi+T/uwldX
+GJAA91j9udEtdK6t3fTQRA5bJl/tLW8DXO/Peg8I5wn8EvrtcG02/T0gRbB3sJRx
+4ubgmIpKcQKBgGiKQRftug1cYY92PSbsBJdDi0Mim4k03Rs0HuaFoWPOJxHkxxW3
+FvBWqgOyHj3gqpBQ91IiNRnd9isEIJB01AFxkgYh8qZt82lKQeG4Fq4yYuyhiiEb
+uvjDulCfJ9doJlGzj2F9wF8NQOchTZ+fpgFKjzmvSs8BJpyy/atDYtKZAoGAHA97
+ZgqM3HQmOmk1WhtZ9I6/2o2u1zkaTLrrvHdb0Ht/tE8qeIX5+cO/g5XvaRH85rpj
++9mGA9Xk0Vl7grJ6mom6D49pAULtHuhceNiE5YUJhFvD19quxwq2fukxRV4bEQyw
+DH47i2BJ/Pm1rxa2LpgWsSHa7ztoJ9QAJSyK2fECgYEA48jVkXCbL8YB2RVCa4pn
+NJEAG0gHin2mXm5jguZDiTiKkR3oWpcvI+5tqf1hPOz/0zSTsircJzy+yn1fV6cP
+555euvrYUa9d9xiHHYJCk5zon0l0CraTxiEyOnimda5a7aFkPPm91uxaLDPvHbHa
+u8tgI2zyRqyWT4Jf9qqqFVw=
+-----END PRIVATE KEY-----
+";
+
+    fn test_config(ttl_seconds: i64) -> JwtConfig {
+        JwtConfig::from_rsa_pem(
+            "https://lorevault.test".into(),
+            vec!["lorevault.test".into()],
+            TEST_PRIVATE_KEY_PEM.as_bytes(),
+            ttl_seconds,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn encode_then_decode_roundtrips_claims() {
+        let config = test_config(3600);
+        let user_id = Uuid::new_v4();
+        let token = encode(&config, user_id, "alice").unwrap();
+
+        let claims = decode(&config, &token).unwrap();
+        assert_eq!(claims.sub, user_id);
+        assert_eq!(claims.preferred_username, "alice");
+        assert_eq!(claims.iss, "https://lorevault.test");
+        assert!(claims.resources.is_empty());
+    }
+
+    #[test]
+    fn encode_scoped_includes_repo_permissions() {
+        let config = test_config(3600);
+        let repo_id = Uuid::new_v4();
+        let token = encode_scoped(&config, Uuid::new_v4(), "bob", vec![repo_id]).unwrap();
+
+        let claims = decode(&config, &token).unwrap();
+        assert_eq!(claims.resources.len(), 1);
+        assert_eq!(
+            claims.resources[0].resource_id,
+            format!("urc-{}", repo_id.as_simple())
+        );
+        assert_eq!(claims.resources[0].permission, vec!["read", "write"]);
+    }
+
+    #[test]
+    fn decode_rejects_expired_token() {
+        // jsonwebtoken applies a default 60s leeway around `exp`, so the
+        // token must be expired by more than that to be rejected.
+        let config = test_config(-120);
+        let token = encode(&config, Uuid::new_v4(), "alice").unwrap();
+
+        assert!(matches!(
+            decode(&config, &token),
+            Err(AuthError::TokenExpired)
+        ));
+    }
+
+    #[test]
+    fn decode_rejects_token_from_different_issuer() {
+        let issuer_a = test_config(3600);
+        let mut issuer_b = test_config(3600);
+        issuer_b.issuer = "https://other.test".into();
+
+        let token = encode(&issuer_a, Uuid::new_v4(), "alice").unwrap();
+        assert!(matches!(
+            decode(&issuer_b, &token),
+            Err(AuthError::TokenInvalid)
+        ));
+    }
+
+    #[test]
+    fn decode_rejects_tampered_token() {
+        let config = test_config(3600);
+        let mut token = encode(&config, Uuid::new_v4(), "alice").unwrap();
+        token.push('x');
+
+        assert!(decode(&config, &token).is_err());
+    }
+}

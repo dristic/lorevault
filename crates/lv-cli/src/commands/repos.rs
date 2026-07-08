@@ -13,14 +13,16 @@ pub async fn list(
     cursor: Option<String>,
 ) -> anyhow::Result<()> {
     let repos =
-        pagination::collect::<RepoSummary>(client, "/api/v1/users/me/repos", limit, cursor)
-            .await?;
+        pagination::collect::<RepoSummary>(client, "/api/v1/users/me/repos", limit, cursor).await?;
 
     let mut tw = TabWriter::new(std::io::stdout());
     writeln!(tw, "ID\tNAME\tDESCRIPTION\tVISIBILITY\tDEFAULT")?;
 
     for repo in repos {
-        let description = repo.description.unwrap_or_default().replace(['\t', '\n', '\r'], " ");
+        let description = repo
+            .description
+            .unwrap_or_default()
+            .replace(['\t', '\n', '\r'], " ");
         writeln!(
             tw,
             "{}\t{}\t{:.20}\t{}\t{}",

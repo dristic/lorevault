@@ -348,3 +348,155 @@ impl UrcAuthApi for AuthApiImpl {
         Err(Status::unimplemented("not supported"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{test_jwt_config, test_state};
+    use tonic::metadata::MetadataMap;
+
+    #[tokio::test]
+    async fn resolve_repo_permission_maps_roles_to_permission_lists() {
+        let state = test_state().await;
+        let owner_id = Uuid::new_v4();
+        let repo_id = Uuid::new_v4();
+
+        let mut tx = state.storage.begin().await.unwrap();
+        tx.insert_user(owner_id, "alice", "alice@example.com")
+            .await
+            .unwrap();
+        tx.insert_repository(
+            repo_id,
+            owner_id,
+            "vault",
+            lv_core::models::Visibility::Private,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        // No permission row yet.
+        assert!(resolve_repo_permission(&state, repo_id, owner_id)
+            .await
+            .unwrap()
+            .is_empty());
+
+        state
+            .storage
+            .set_repo_permission(repo_id, owner_id, RepoRole::Read)
+            .await
+            .unwrap();
+        assert_eq!(
+            resolve_repo_permission(&state, repo_id, owner_id)
+                .await
+                .unwrap(),
+            vec!["read"]
+        );
+
+        state
+            .storage
+            .set_repo_permission(repo_id, owner_id, RepoRole::Write)
+            .await
+            .unwrap();
+        assert_eq!(
+            resolve_repo_permission(&state, repo_id, owner_id)
+                .await
+                .unwrap(),
+            vec!["read", "write"]
+        );
+
+        state
+            .storage
+            .set_repo_permission(repo_id, owner_id, RepoRole::Admin)
+            .await
+            .unwrap();
+        assert_eq!(
+            resolve_repo_permission(&state, repo_id, owner_id)
+                .await
+                .unwrap(),
+            vec!["read", "write", "admin"]
+        );
+    }
+
+    #[test]
+    fn extract_claims_rejects_missing_authorization_header() {
+        let config = test_jwt_config(3600);
+        let meta = MetadataMap::new();
+
+        let err = extract_claims(&meta, &config).unwrap_err();
+        assert_eq!(err.code(), tonic::Code::Unauthenticated);
+    }
+
+    #[test]
+    fn extract_claims_accepts_valid_bearer_token() {
+        let config = test_jwt_config(3600);
+        let user_id = Uuid::new_v4();
+        let token = lv_auth::jwt::encode(&config, user_id, "alice").unwrap();
+
+        let mut meta = MetadataMap::new();
+        meta.insert("authorization", format!("Bearer {token}").parse().unwrap());
+
+        let claims = extract_claims(&meta, &config).unwrap();
+        assert_eq!(claims.sub, user_id);
+    }
+
+    #[test]
+    fn extract_claims_rejects_expired_token() {
+        // jsonwebtoken applies a default 60s leeway around `exp`, so the
+        // token must be expired by more than that to be rejected.
+        let config = test_jwt_config(-120);
+        let token = lv_auth::jwt::encode(&config, Uuid::new_v4(), "alice").unwrap();
+
+        let mut meta = MetadataMap::new();
+        meta.insert("authorization", format!("Bearer {token}").parse().unwrap());
+
+        let err = extract_claims(&meta, &config).unwrap_err();
+        assert_eq!(err.code(), tonic::Code::Unauthenticated);
+        assert_eq!(err.message(), "token expired");
+    }
+
+    #[tokio::test]
+    async fn exchange_api_key_for_user_token_rejects_unknown_key() {
+        let state = test_state().await;
+        let impl_ = AuthApiImpl { state };
+
+        let request = Request::new(ExchangeApiKeyForUserTokenRequest {
+            api_key: "lv_does-not-exist".into(),
+        });
+        let err = impl_
+            .exchange_api_key_for_user_token(request)
+            .await
+            .unwrap_err();
+        assert_eq!(err.code(), tonic::Code::Unauthenticated);
+    }
+
+    #[tokio::test]
+    async fn exchange_api_key_for_user_token_succeeds_for_known_key() {
+        let state = test_state().await;
+        let user_id = Uuid::new_v4();
+        let mut tx = state.storage.begin().await.unwrap();
+        tx.insert_user(user_id, "alice", "alice@example.com")
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        let hash = lv_auth::token::hash_api_token("lv_test-token");
+        state
+            .storage
+            .insert_api_token(Uuid::new_v4(), user_id, "ci", &hash)
+            .await
+            .unwrap();
+
+        let impl_ = AuthApiImpl { state };
+        let request = Request::new(ExchangeApiKeyForUserTokenRequest {
+            api_key: "lv_test-token".into(),
+        });
+        let response = impl_
+            .exchange_api_key_for_user_token(request)
+            .await
+            .unwrap()
+            .into_inner();
+
+        assert_eq!(response.user_token.unwrap().user_id, user_id.to_string());
+    }
+}

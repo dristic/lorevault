@@ -6,3 +6,6 @@ pub mod proto;
 pub mod server;
 pub mod services;
 pub mod state;
+
+#[cfg(test)]
+mod test_support;

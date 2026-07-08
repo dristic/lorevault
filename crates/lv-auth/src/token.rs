@@ -15,3 +15,28 @@ pub fn generate_api_token() -> (String, String) {
 pub fn hash_api_token(raw: &str) -> String {
     hex::encode(Sha256::digest(raw.as_bytes()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generated_tokens_are_unique_and_prefixed() {
+        let (raw_a, _) = generate_api_token();
+        let (raw_b, _) = generate_api_token();
+        assert!(raw_a.starts_with("lv_"));
+        assert_ne!(raw_a, raw_b);
+    }
+
+    #[test]
+    fn hash_api_token_matches_generated_hash() {
+        let (raw, hash) = generate_api_token();
+        assert_eq!(hash_api_token(&raw), hash);
+    }
+
+    #[test]
+    fn hash_api_token_is_deterministic() {
+        assert_eq!(hash_api_token("lv_abc"), hash_api_token("lv_abc"));
+        assert_ne!(hash_api_token("lv_abc"), hash_api_token("lv_xyz"));
+    }
+}

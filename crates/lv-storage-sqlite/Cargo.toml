@@ -14,3 +14,6 @@ uuid = { workspace = true }
 time = { workspace = true }
 sqlx = { workspace = true }
 async-trait = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

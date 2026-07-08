@@ -1,6 +1,9 @@
 use std::io::Write;
 
-use lv_api_types::{auth::{CreateTokenRequest, CreateTokenResponse}, users::TokenSummary};
+use lv_api_types::{
+    auth::{CreateTokenRequest, CreateTokenResponse},
+    users::TokenSummary,
+};
 use tabwriter::TabWriter;
 
 use crate::client::ApiClient;
@@ -45,7 +48,8 @@ pub async fn list(
 }
 
 pub async fn create(client: &ApiClient, name: String) -> anyhow::Result<()> {
-    let response = client.post::<_, CreateTokenResponse>("/api/v1/auth/tokens", &CreateTokenRequest { name })
+    let response = client
+        .post::<_, CreateTokenResponse>("/api/v1/auth/tokens", &CreateTokenRequest { name })
         .await?;
 
     println!("Created token {}", response.name);

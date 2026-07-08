@@ -351,9 +351,7 @@ impl Storage for SqliteStorage {
 
         let next_cursor = if tokens.len() > limit as usize {
             tokens.truncate(limit as usize);
-            tokens
-                .last()
-                .map(|t| encode_cursor(&(t.created_at, t.id)))
+            tokens.last().map(|t| encode_cursor(&(t.created_at, t.id)))
         } else {
             None
         };
