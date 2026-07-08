@@ -35,11 +35,14 @@ VCS data (chunks, revisions) lives on the external `lore-server`; `lv-storage` o
 
 ```
 crates/
-  lv-core/        Core domain types, errors, traits shared across crates
-  lv-auth/        Authentication (passwords, JWT, API tokens, OAuth)
-  lv-storage/     Storage abstraction: SQLite (sqlx)
-  lv-gateway/     Tonic gRPC server implementing the Lore protocol
-  lv-api/         Axum REST API: user/repo management, web hooks
+  lv-core/            Core domain types, errors, pagination, traits shared across crates
+  lv-auth/            Authentication (passwords, JWT, API tokens, OAuth)
+  lv-storage/         Storage abstraction trait (Storage/StorageTx)
+  lv-storage-sqlite/  SQLite implementation of lv-storage (sqlx)
+  lv-gateway/         Tonic gRPC server implementing the auth/identity side of the Lore protocol
+  lv-api/             Axum REST API: user/repo management, auth endpoints
+  lv-api-types/       Wire-format request/response types shared by lv-api and lv-cli
+  lv-cli/             `lorevault` CLI client for the REST API
 ```
 
 ## Tech Stack
@@ -72,14 +75,13 @@ SSH key auth (an `ssh_keys` table) was scaffolded early on but never wired up an
 
 ## Lore Protocol (gRPC)
 
-Lore's wire protocol is gRPC (protobuf). The services we must implement:
+`lv-gateway` implements the **auth/identity side** of the Lore protocol that lore-server calls into — it does not implement the VCS protocol itself (repos, branches, CAS chunks, locks), which lore-server owns and serves directly:
 
-- **RepoService** — create/read/list/delete repos, branch CRUD, revision write/read
-- **CasService** — chunk upload (find-missing, upload), chunk download
-- **LockService** — acquire/release/query exclusive file locks
-- **AdminService** — server admin operations
+- **UrcAuthApi** (`proto/auth_api.proto`) — exchanges API keys/external tokens for short-lived JWTs, mints multi-resource-scoped tokens, resolves per-repo permissions (`CheckUserPermission`), and drives the browser-based CLI login flow (`StartAuthSession` / `GetAuthSession`). Several methods (`RefreshAuthSession`, `VerifyUser`, `LookupUserPermissions`, `GetUserInfo`, `GetUserId`, `GetProviderUserId`) are still stubbed as `unimplemented`.
+- **RebacApi** (`proto/rebac_api.proto`) — lore-server calls back into this on repo create/delete so LoreVault's `repositories`/`repo_permissions` tables stay in sync with what lore-server actually manages (see `lv-gateway/src/services/rebac.rs`).
+- **EnvironmentService** (`proto/environment.proto` and `proto/lore/environment/v1/environment.proto` — legacy and current wire versions) — tells the Lore CLI which `auth_url` to use.
 
-Each gRPC call carries an `Authorization: Bearer <api_token>` metadata header. The gateway validates the token, resolves the owner/repo from the request, and checks permissions before routing to the right storage namespace.
+Most calls require an `Authorization: Bearer <jwt>` metadata header (validated via `extract_claims`), the exception being the initial API-key exchange, which carries the raw API key in the request body since the caller doesn't have a JWT yet.
 
 ## Local Development
 

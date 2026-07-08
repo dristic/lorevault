@@ -22,14 +22,14 @@ hello@lorevault.dev.
 ## Development Setup
 
 ```bash
-# Prerequisites: cargo, docker compose, sqlx-cli
-docker compose up -d
-sqlx migrate run --database-url postgres://lorevault:lorevault@localhost/lorevault
+# Prerequisites: cargo, sqlx-cli
+sqlx migrate run --database-url sqlite:./data/lorevault.db
 cargo run -p lv-api
 ```
 
-See `config/default.toml` for all configuration keys. Copy to `config/local.toml` and override
-as needed.
+No external services (Postgres, Redis, MinIO) are required — LoreVault runs against a single
+SQLite file. See `config/default.toml` for all configuration keys. Copy to `config/local.toml`
+and override as needed.
 
 ## Code Style
 
