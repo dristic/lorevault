@@ -8,6 +8,9 @@ pub fn map_storage_err(e: StorageError) -> Status {
             Status::already_exists(format!("conflict: {field}"))
         }
         StorageError::ForeignKeyViolation => Status::failed_precondition("foreign key violation"),
-        other => Status::internal(other.to_string()),
+        other => {
+            tracing::error!(error = ?other, "storage error");
+            Status::internal(other.to_string())
+        }
     }
 }

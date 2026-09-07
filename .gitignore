@@ -10,6 +10,8 @@
 .env*
 **/*.rs.bk
 
+/demo/
+
 # OpenTofu / Terraform
 infra/.terraform/
 infra/.terraform.lock.hcl
