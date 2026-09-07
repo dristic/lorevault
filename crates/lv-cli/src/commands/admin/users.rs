@@ -1,7 +1,7 @@
 use std::io::Write;
 
-use lv_api_types::admin::AdminUserSummary;
-use lv_api_types::auth::{AuthResponse, RegisterRequest};
+use lv_api_types::admin::{AdminUserSummary, SetAdminRequest};
+use lv_api_types::auth::{AuthResponse, RegisterRequest, ResetPasswordRequest};
 use tabwriter::TabWriter;
 
 use crate::client::ApiClient;
@@ -65,21 +65,40 @@ pub async fn create(
     Ok(())
 }
 
-/// TODO: `client.post_no_content("/api/v1/admin/users/{username}/admin", &lv_api_types::admin::SetAdminRequest { is_admin })`.
-/// The server refuses to revoke the last remaining admin (409 conflict) — surface that error as-is.
-pub async fn set_admin(
-    _client: &ApiClient,
-    _username: String,
-    _is_admin: bool,
-) -> anyhow::Result<()> {
-    anyhow::bail!("`lorevault admin users set-admin` is not implemented yet")
+/// Grants or revoked admin privileges for another user. The server refuses to
+/// revoke the last remaining admin (409 conflict); that error surfaces as-is
+/// through `?`.
+pub async fn set_admin(client: &ApiClient, username: String, is_admin: bool) -> anyhow::Result<()> {
+    client
+        .post_no_content(
+            &format!("/api/v1/admin/users/{username}/admin"),
+            &SetAdminRequest { is_admin },
+        )
+        .await?;
+
+    let verb = if is_admin { "Granted" } else { "Revoked" };
+    println!("{verb} admin privileges for {username}.");
+
+    Ok(())
 }
 
-/// TODO: `client.post_no_content("/api/v1/auth/password/reset", &lv_api_types::auth::ResetPasswordRequest { username, new_password })`.
+/// Resets the password for another user.
 pub async fn reset_password(
-    _client: &ApiClient,
-    _username: String,
-    _new_password: String,
+    client: &ApiClient,
+    username: String,
+    new_password: String,
 ) -> anyhow::Result<()> {
-    anyhow::bail!("`lorevault admin users reset-password` is not implemented yet")
+    client
+        .post_no_content(
+            "/api/v1/auth/password/reset",
+            &ResetPasswordRequest {
+                username: username.clone(),
+                new_password,
+            },
+        )
+        .await?;
+
+    println!("Password reset for {username}. They must change it at next login.");
+
+    Ok(())
 }

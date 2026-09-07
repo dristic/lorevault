@@ -15,7 +15,6 @@ pub struct ApiClient {
 
 // `post` and `post_no_content` are unused until the stubbed commands in
 // `commands/` are filled in — they're the client-side half of that work.
-#[allow(dead_code)]
 impl ApiClient {
     pub fn new(base_url: String, token: Option<String>) -> Self {
         Self {
