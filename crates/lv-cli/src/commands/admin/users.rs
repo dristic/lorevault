@@ -86,8 +86,13 @@ pub async fn set_admin(client: &ApiClient, username: String, is_admin: bool) -> 
 pub async fn reset_password(
     client: &ApiClient,
     username: String,
-    new_password: String,
+    new_password: Option<String>,
 ) -> anyhow::Result<()> {
+    let new_password = match new_password {
+        Some(new_password) => new_password,
+        None => rpassword::prompt_password("New password: ")?,
+    };
+
     client
         .post_no_content(
             "/api/v1/auth/password/reset",

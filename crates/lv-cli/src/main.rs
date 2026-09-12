@@ -169,7 +169,10 @@ enum AdminUsersCommand {
     /// Reset another user's password (forces them to change it at next login).
     ResetPassword {
         username: String,
-        new_password: String,
+        /// Omit to be prompted instead of passing it on the command line to
+        /// prevent leaking passwords into shell history.
+        #[arg(long)]
+        new_password: Option<String>,
     },
 }
 
